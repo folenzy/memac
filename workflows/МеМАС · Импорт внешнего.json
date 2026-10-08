@@ -1,0 +1,151 @@
+{
+  "name": "МеМАС · Импорт внешнего",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "import-external",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "89bba756-8edc-4650-b9e4-a9a8bd19a650",
+      "name": "Webhook",
+      "webhookId": "f2465d1b-b6fd-4551-bd51-bc40b3a392a0"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $input.first().json.body || $input.first().json;\n\nconst empId = Number(b.employee_id);\nif (!empId) throw new Error('Не указан employee_id');\n\nconst scores = Array.isArray(b.scores) ? b.scores : [];\nconst clean = [];\nfor (const s of scores) {\n  const lvl = Number(s.ku_level);\n  if (!s.competency_name) continue;\n  if (lvl < 1 || lvl > 5) continue;\n  clean.push({ competency_name: String(s.competency_name), ku_level: lvl });\n}\n\nreturn [{ json: {\n  employee_id: empId,\n  company:     String(b.company || '').replace(/'/g, \"''\"),\n  held_at:     String(b.held_at || '').slice(0, 10),\n  comment:     String(b.comment || '').replace(/'/g, \"''\"),\n  imported_by: Number(b.imported_by) || null,\n  scores_json: JSON.stringify(clean).replace(/'/g, \"''\"),\n  count:       clean.length\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "e02713d1-6275-441d-9f52-e1907e5637b7",
+      "name": "1. Разобрать"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".external_interviews\n    (employee_id, company, held_at, scores, comment, imported_by)\nVALUES (\n  {{ $json.employee_id }},\n  '{{ $json.company }}',\n  NULLIF('{{ $json.held_at }}', '')::date,\n  '{{ $json.scores_json }}'::jsonb,\n  '{{ $json.comment }}',\n  {{ $json.imported_by === null ? 'NULL' : $json.imported_by }}\n)\nRETURNING id, employee_id, company, held_at;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        0
+      ],
+      "id": "532cd759-c842-494a-a5e4-30eac7cf0acb",
+      "name": "2. Записать",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".employee_competencies ec\nSET status = 'in_progress', updated_at = now()\nFROM jsonb_array_elements('{{ $('1. Разобрать').first().json.scores_json }}'::jsonb) AS s\nJOIN \"ASiruk\".competencies c ON c.name = s->>'competency_name'\nWHERE ec.employee_id = {{ $json.employee_id }}\n  AND ec.competency_id = c.id\n  AND ec.status = 'not_started'\nRETURNING ec.competency_id, ec.status;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        624,
+        0
+      ],
+      "id": "efb40dfd-f59c-4b87-b90c-af1e6e709f40",
+      "name": "3. Обновить статусы",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        832,
+        0
+      ],
+      "id": "b6158469-74a8-40a4-94e0-fe22afaef44b",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "1. Разобрать",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Разобрать": {
+      "main": [
+        [
+          {
+            "node": "2. Записать",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Записать": {
+      "main": [
+        [
+          {
+            "node": "3. Обновить статусы",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Обновить статусы": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "3d6e48b5-5441-41dc-a312-0175e9d8bc60",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "ltfXbMt2aeDZ9PLC",
+  "tags": []
+}

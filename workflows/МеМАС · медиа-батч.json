@@ -1,0 +1,214 @@
+{
+  "name": "МеМАС · медиа-батч",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "374b3846-da14-4213-9aab-4898811bf992",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT q.id AS question_id, q.question_text\nFROM \"ASiruk\".interview_questions q\nLEFT JOIN \"ASiruk\".media_assets m ON m.question_id = q.id\nWHERE q.status = 'approved' AND m.id IS NULL\nORDER BY q.id\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "id": "be250171-5701-444f-a506-ed8ff48eb17d",
+      "name": "вопросы без медиа",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".media_assets (question_id, audio_path, video_path, duration_sec)\nVALUES (\n  {{ $('M2. По одному').item.json.question_id }},\n  '{{ $('M3. TTS').item.json.audio_path }}',\n  '{{ $json.video_path }}',\n  {{ $('M3. TTS').item.json.duration_sec }}\n)\nON CONFLICT (question_id) DO UPDATE\nSET audio_path   = EXCLUDED.audio_path,\n    video_path   = EXCLUDED.video_path,\n    duration_sec = EXCLUDED.duration_sec,\n    generated_at = now();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1104,
+        -16
+      ],
+      "id": "74ee3988-a18a-4025-9220-6f4e603fdd0c",
+      "name": "сохран пути",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "00452acd-3daf-4408-924d-b03dd09bbc8d",
+      "name": "M2. По одному"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.102.7.157:8011/tts",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.question_text }}"
+            },
+            {
+              "name": "out_name",
+              "value": "=q_{{ $json.question_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        688,
+        -16
+      ],
+      "id": "69654b55-bfe8-47c2-93e8-3184e3b3fef6",
+      "name": "M3. TTS"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.102.7.157:8013/lipsync",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "audio_path",
+              "value": "={{ $json.audio_path }}"
+            },
+            {
+              "name": "out_name",
+              "value": "=q_{{ $('M2. По одному').item.json.question_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        896,
+        -16
+      ],
+      "id": "30086078-7b8c-4bf3-902e-91aa782095c9",
+      "name": "M3. Аватар"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "вопросы без медиа",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "вопросы без медиа": {
+      "main": [
+        [
+          {
+            "node": "M2. По одному",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "сохран пути": {
+      "main": [
+        [
+          {
+            "node": "вопросы без медиа",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "M2. По одному": {
+      "main": [
+        [],
+        [
+          {
+            "node": "M3. TTS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "M3. TTS": {
+      "main": [
+        [
+          {
+            "node": "M3. Аватар",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "M3. Аватар": {
+      "main": [
+        [
+          {
+            "node": "сохран пути",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "6034bf03-2577-4377-832a-dc946c36f51e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "kAgWMeQfIAA3aWnd",
+  "tags": []
+}

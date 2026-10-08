@@ -1,0 +1,192 @@
+{
+  "name": "МеМАС · Опубликовать отчёт",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s.id AS session_id,\n       {{ $json.body.or_id }} AS or_id,\n       '{{ $json.body.summary.replaceAll(\"'\", \"''\") }}' AS summary,\n       CASE\n         WHEN s.id IS NULL THEN 'not_found'\n         WHEN s.or_id IS DISTINCT FROM {{ $json.body.or_id }} THEN 'not_owner'\n         ELSE 'ok'\n       END AS check_result\nFROM (SELECT {{ $json.body.session_id }}::int AS sid) t\nLEFT JOIN \"ASiruk\".interview_sessions s ON s.id = t.sid;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "6af115db-91e2-4b6b-b10f-c25f9a8de288",
+      "name": "1. Проверить право",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7e3d79dd-686e-4179-b623-b0b854a02ab3",
+              "leftValue": "={{ $json.check_result }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "31fa2c64-ca05-4c57-8be8-b575d3977e4f",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".reports\nSET content = jsonb_set(content, '{summary}',\n                        to_jsonb('{{ $('Вход: публикация').first().json.body.summary.replaceAll(\"'\", \"''\") }}'::text)),\n    status = 'published',\n    published_by = {{ $('Вход: публикация').first().json.body.or_id }},\n    published_at = now()\nWHERE session_id = {{ $json.session_id }} AND level = 3\nRETURNING session_id, status, published_at;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        704,
+        -16
+      ],
+      "id": "14a68049-dc6a-4836-aa5a-84475eb01ad9",
+      "name": "2. Опубликовать",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        912,
+        -16
+      ],
+      "id": "6d0d67b9-0e99-482d-b20e-bbbbd77fee0a",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"{{ $json.check_result }}\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        912,
+        176
+      ],
+      "id": "33298565-6d58-4151-835e-5f729d64b255",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-report",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "9c68df4a-531c-41c8-8ad2-932a4ed2ebaa",
+      "name": "Вход: публикация",
+      "webhookId": "193170bc-86ef-429b-be60-c57afbfc7b1d"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "1. Проверить право": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "2. Опубликовать",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Опубликовать": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Вход: публикация": {
+      "main": [
+        [
+          {
+            "node": "1. Проверить право",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "27092151-3ed7-4b10-9591-1f194c754967",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "SMvM3cbLWwolzK6n",
+  "tags": []
+}

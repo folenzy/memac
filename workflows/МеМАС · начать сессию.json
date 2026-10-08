@@ -1,0 +1,273 @@
+{
+  "name": "МеМАС · начать сессию",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "start-session",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -16,
+        -16
+      ],
+      "id": "961a0685-efcd-4a6f-8633-8c97390c4ddb",
+      "name": "Webhook",
+      "webhookId": "9fc63008-8604-4d64-8ef2-25578e7c3235"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT t.token,\n       r.id          AS room_id,\n       r.session_id,\n       r.role,\n       s.status      AS session_status,\n       s.employee_id,\n       s.is_training,\n       s.duration_min,\n       u.full_name   AS employee_name,\n       CASE\n         WHEN r.id IS NULL             THEN 'not_found'\n         WHEN r.expires_at <= now()    THEN 'expired'\n         WHEN s.status = 'completed'   THEN 'already_done'\n         ELSE 'ok'\n       END AS check_result\nFROM (SELECT '{{ $json.token }}'::text AS token) t\nLEFT JOIN \"ASiruk\".rooms r              ON r.token = t.token\nLEFT JOIN \"ASiruk\".interview_sessions s ON s.id = r.session_id\nLEFT JOIN \"ASiruk\".users u              ON u.id = s.employee_id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        -16
+      ],
+      "id": "67498bda-a2fc-4ab8-9e22-c53aafdff846",
+      "name": "1. Проверить токен",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nlet b = raw.body;\nif (!b) b = raw;\n\nlet t = String(b.token || '');\nt = t.replace(/[^a-f0-9]/gi, '');\nt = t.slice(0, 64);\n\nreturn [{ json: { token: t } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        -16
+      ],
+      "id": "9be6939d-3c1f-4e45-b144-9cab28d09db7",
+      "name": "0. Очистить токен"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".interview_sessions\nSET status     = 'in_progress',\n    started_at = coalesce(started_at, now())\nWHERE id = {{ $json.session_id }}\nRETURNING id AS session_id, started_at;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        896,
+        -32
+      ],
+      "id": "de1b9337-8806-4132-8368-4270a5f818b7",
+      "name": "2. Проверить сессию",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT sq.order_no,\n       sq.question_id,\n       sq.competency_id,\n       q.question_text,\n       q.question_type,\n       c.name  AS competency_name,\n       c.kind  AS competency_kind,\n       m.video_path,\n       m.audio_path,\n       m.duration_sec\nFROM \"ASiruk\".session_questions sq\nJOIN \"ASiruk\".interview_questions q ON q.id = sq.question_id\nLEFT JOIN \"ASiruk\".competencies c   ON c.id = sq.competency_id\nLEFT JOIN \"ASiruk\".media_assets m   ON m.question_id = sq.question_id\nWHERE sq.session_id = {{ $json.session_id }}\nORDER BY sq.order_no;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1152,
+        -32
+      ],
+      "id": "ae628c09-3acd-4b10-89e4-7fed10c515dc",
+      "name": "3. Плейлист",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst meta = $('1. Проверить токен').first().json;\n\nif (rows.length === 0) {\n  return [{ json: { ok: false, error: 'empty_playlist', session_id: meta.session_id } }];\n}\n\nlet withVideo = 0;\nfor (const r of rows) {\n  if (r.video_path) withVideo = withVideo + 1;\n}\n\nreturn [{ json: {\n  ok:            true,\n  session_id:    meta.session_id,\n  employee_name: meta.employee_name,\n  is_training:   meta.is_training,\n  duration_min:  meta.duration_min,\n  total:         rows.length,\n  with_video:    withVideo,\n  questions:     rows\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        -32
+      ],
+      "id": "5cef3eb2-5e4a-4131-a73e-3abef13439c9",
+      "name": "4. Собрать ответ"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "13682536-81a0-42a7-83c2-8d1a0745a702",
+              "leftValue": "={{ $json.check_result }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        640,
+        -16
+      ],
+      "id": "026fb526-6ea4-4af6-9cb2-2696f56710ef",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"{{ $json.check_result }}\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        784,
+        192
+      ],
+      "id": "9425950f-2221-4f0f-a1e7-bb3ee02fc862",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1600,
+        -32
+      ],
+      "id": "e9ee5430-b9f6-4cae-809e-200479a0ab95",
+      "name": "Respond to Webhook1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "0. Очистить токен",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "0. Очистить токен": {
+      "main": [
+        [
+          {
+            "node": "1. Проверить токен",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Проверить токен": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Проверить сессию": {
+      "main": [
+        [
+          {
+            "node": "3. Плейлист",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Плейлист": {
+      "main": [
+        [
+          {
+            "node": "4. Собрать ответ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "2. Проверить сессию",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Собрать ответ": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "836c077e-bd6e-4721-a9c6-511850e7c8d4",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "9uQCOk53dCIPvDd8",
+  "tags": []
+}

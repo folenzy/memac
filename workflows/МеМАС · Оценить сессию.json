@@ -1,0 +1,268 @@
+{
+  "name": "МеМАС · Оценить сессию",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "evaluate-session",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "2adc0244-cc56-4ef1-be54-b7ce35f24122",
+      "name": "Webhook",
+      "webhookId": "764d8217-fa6c-4e49-ae38-daff5d76ad19"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.session_id,\n       a.id            AS answer_id,\n       a.transcript,\n       q.question_text,\n       q.reference_answer,\n       c.id            AS competency_id,\n       c.name          AS competency_name,\n       c.kind          AS competency_kind,\n       coalesce(string_agg(DISTINCT s.dev_indicators, ' | '), '') AS dev_indicators,\n       m.wpm, m.pause_count, m.pause_total_sec\nFROM \"ASiruk\".session_answers a\nJOIN \"ASiruk\".interview_questions q ON q.id = a.question_id\nLEFT JOIN \"ASiruk\".competencies c   ON c.id = q.competency_id\nLEFT JOIN \"ASiruk\".skills s         ON s.competency_id = c.id\nLEFT JOIN \"ASiruk\".audio_metrics m  ON m.answer_id = a.id\nWHERE a.session_id = {{ $json.body.session_id }}\n  AND coalesce(a.transcript, '') <> ''\nGROUP BY a.session_id, a.id, a.transcript, q.question_text, q.reference_answer,\n         c.id, c.name, c.kind, m.wpm, m.pause_count, m.pause_total_sec\nORDER BY a.id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "id": "ff3bf2a9-f990-471f-a1d6-f25cb9957649",
+      "name": "1. Материал для оценки",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nif (rows.length === 0) throw new Error('Нет ответов с расшифровкой');\n\nconst parts = [];\nfor (const r of rows) {\n  let block = '[answer_id=' + r.answer_id + ']\\n';\n  block += 'Компетенция: ' + (r.competency_name || '-') + '\\n';\n  block += 'Вопрос: ' + r.question_text + '\\n';\n  block += 'Эталон: ' + (r.reference_answer || '-') + '\\n';\n  if (r.dev_indicators) block += 'Признаки слабого ответа: ' + r.dev_indicators + '\\n';\n  block += 'Ответ кандидата: ' + r.transcript + '\\n';\n  parts.push(block);\n}\n\nreturn [{ json: {\n  session_id: rows[0].session_id,\n  count:      rows.length,\n  material:   parts.join('\\n---\\n'),\n  rows:       rows\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "f394143e-c79f-463d-976c-a4e384b8c539",
+      "name": "2. Собрать промпт"
+    },
+    {
+      "parameters": {
+        "model": "llama3.2:3b",
+        "options": {
+          "temperature": 0.2,
+          "numCtx": 4096,
+          "numPredict": 2000,
+          "format": "json"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        624,
+        192
+      ],
+      "id": "02900545-6f6a-4e81-9905-2efe0600022a",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "jvyHtGYXHyiP9QXE",
+          "name": "Ollama account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Ты оцениваешь ответы кандидата на техническом собеседовании аналитика BI.\n\nШкала карьерных уровней:\n1 — ответа по сути нет либо он неверен\n2 — базовое понимание, много пробелов\n3 — уверенное владение на уровне типовых задач\n4 — глубокое понимание, видит нюансы и ограничения\n5 — экспертный уровень, системное мышление, свой опыт\n\nМатериал:\n{{ $json.material }}\n\nОцени КАЖДЫЙ блок. Верни JSON-объект строго такой формы:\n{\"scores\": [{\"answer_id\": 1, \"ku_level\": 3, \"rationale\": \"...\"}]}\n\nПравила:\n- answer_id ровно то число, что стоит в [answer_id=ЧИСЛО].\n- ku_level целое от 1 до 5.\n- rationale 1-2 предложения по-русски: что именно в ответе дало такую оценку.\n- Оценивай содержание ответа, а не его длину.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        624,
+        0
+      ],
+      "id": "549629c2-3348-4bc1-9333-15834e8f8808",
+      "name": "3. LLM оценка"
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $('2. Собрать промпт').first().json;\nconst valid = new Set();\nfor (const r of meta.rows) valid.add(Number(r.answer_id));\n\nconst compById = {};\nfor (const r of meta.rows) compById[r.answer_id] = r.competency_id;\n\nconst out = [];\n\nfunction push(o) {\n  if (!o) return;\n  const id = Number(o.answer_id);\n  if (!valid.has(id)) return;\n  let ku = parseInt(o.ku_level, 10);\n  if (isNaN(ku)) ku = 1;\n  if (ku < 1) ku = 1;\n  if (ku > 5) ku = 5;\n  out.push({\n    answer_id:     id,\n    competency_id: compById[id] || null,\n    ku_level:      ku,\n    rationale:     String(o.rationale || '').trim(),\n    model:         'llama3.2:3b'\n  });\n}\n\nfunction eat(v, depth) {\n  if (v === null) return;\n  if (v === undefined) return;\n  if (depth > 5) return;\n  if (Array.isArray(v)) { for (const x of v) eat(x, depth + 1); return; }\n  if (typeof v === 'string') {\n    let frag = null;\n    const a = v.indexOf('['); const b = v.lastIndexOf(']');\n    if (a !== -1) { if (b > a) frag = v.slice(a, b + 1); }\n    if (frag === null) {\n      const c = v.indexOf('{'); const d = v.lastIndexOf('}');\n      if (c !== -1) { if (d > c) frag = v.slice(c, d + 1); }\n    }\n    if (frag === null) return;\n    try { eat(JSON.parse(frag), depth + 1); }\n    catch (e1) {\n      try { eat(JSON.parse(frag.replace(/,\\s*([}\\]])/g, '$1')), depth + 1); }\n      catch (e2) { return; }\n    }\n    return;\n  }\n  if (typeof v === 'object') {\n    if (v.ku_level !== undefined && v.answer_id !== undefined) { push(v); return; }\n    for (const x of Object.values(v)) eat(x, depth + 1);\n  }\n}\n\nfor (const item of $input.all()) eat(item.json, 0);\n\n// не оценённые моделью — ставим 1, чтобы отчёт не был дырявым\nconst done = new Set(out.map(o => o.answer_id));\nfor (const r of meta.rows) {\n  if (!done.has(Number(r.answer_id))) {\n    out.push({\n      answer_id: Number(r.answer_id), competency_id: r.competency_id,\n      ku_level: 1, rationale: 'Модель не вернула оценку', model: 'llama3.2:3b'\n    });\n  }\n}\n\nreturn [{ json: { session_id: meta.session_id, scores: out, count: out.length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        0
+      ],
+      "id": "2b72b2ae-4136-4e8c-9c91-3ecf1600f220",
+      "name": "4. Разобрать оценки"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".answer_scores (answer_id, competency_id, ku_level, rationale, model)\nSELECT (s->>'answer_id')::int, (s->>'competency_id')::int,\n       (s->>'ku_level')::int, s->>'rationale', s->>'model'\nFROM jsonb_array_elements('{{ JSON.stringify($json.scores) }}'::jsonb) AS s\nRETURNING answer_id, ku_level;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1184,
+        0
+      ],
+      "id": "11e8df01-f367-43fa-828b-83073ba66dc5",
+      "name": "5. Записать оценки",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".employee_competencies ec\nSET status = 'in_progress', updated_at = now()\nFROM (\n  SELECT DISTINCT sc.competency_id, s.employee_id\n  FROM \"ASiruk\".session_competencies sc\n  JOIN \"ASiruk\".interview_sessions s ON s.id = sc.session_id\n  WHERE sc.session_id = {{ $('4. Разобрать оценки').first().json.session_id }}\n) t\nWHERE ec.employee_id = t.employee_id\n  AND ec.competency_id = t.competency_id\n  AND ec.status = 'not_started'\nRETURNING ec.competency_id, ec.status;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1392,
+        0
+      ],
+      "id": "a88cf318-bcc7-4fd4-a0d7-d08409f47e66",
+      "name": "6. Итог по компетенциям",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1600,
+        0
+      ],
+      "id": "f7a010cc-68aa-45b4-81de-0701a3fefbaf",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "1. Материал для оценки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Материал для оценки": {
+      "main": [
+        [
+          {
+            "node": "2. Собрать промпт",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Собрать промпт": {
+      "main": [
+        [
+          {
+            "node": "3. LLM оценка",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "3. LLM оценка",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. LLM оценка": {
+      "main": [
+        [
+          {
+            "node": "4. Разобрать оценки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Разобрать оценки": {
+      "main": [
+        [
+          {
+            "node": "5. Записать оценки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Записать оценки": {
+      "main": [
+        [
+          {
+            "node": "6. Итог по компетенциям",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Итог по компетенциям": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "2309e218-0acd-4197-8016-93d8346e6a41",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "wNHRDZsghSSZNTI9",
+  "tags": []
+}

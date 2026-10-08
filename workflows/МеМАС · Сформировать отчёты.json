@@ -1,0 +1,332 @@
+{
+  "name": "МеМАС · Сформировать отчёты",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "build-reports",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "2ae4685e-f73a-4583-b1b3-0c47975ff705",
+      "name": "Webhook",
+      "webhookId": "c4d47c4b-8309-435d-a0d8-f2af0fa43d99"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s.id                          AS session_id,\n       s.employee_id,\n       s.or_id,\n       s.is_training,\n       s.duration_min,\n       u.full_name                   AS employee_name,\n       coalesce(sq.order_no, 0)      AS order_no,\n       a.id                          AS answer_id,\n       q.question_text,\n       coalesce(a.transcript, '')    AS transcript,\n       coalesce(c.name, '-')         AS competency_name,\n       c.kind                        AS competency_kind,\n       sc.ku_level,\n       coalesce(sc.rationale, '')    AS rationale,\n       m.wpm, m.pause_count, m.pause_total_sec,\n       (SELECT count(*) FROM \"ASiruk\".red_flags rf WHERE rf.session_id = s.id) AS flag_count\nFROM \"ASiruk\".interview_sessions s\nJOIN \"ASiruk\".users u               ON u.id = s.employee_id\nJOIN \"ASiruk\".session_answers a     ON a.session_id = s.id\nJOIN \"ASiruk\".interview_questions q ON q.id = a.question_id\nLEFT JOIN \"ASiruk\".session_questions sq ON sq.session_id = s.id AND sq.question_id = a.question_id\nLEFT JOIN \"ASiruk\".competencies c   ON c.id = q.competency_id\nLEFT JOIN \"ASiruk\".answer_scores sc ON sc.answer_id = a.id\nLEFT JOIN \"ASiruk\".audio_metrics m  ON m.answer_id = a.id\nWHERE s.id = {{ $json.body.session_id }}\nORDER BY coalesce(sq.order_no, a.id);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "e1375a9f-05a6-421f-bef3-dc55a8f3d6ae",
+      "name": "1. Данные сессии",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nif (rows.length === 0) throw new Error('В сессии нет ответов');\n\nconst head = rows[0];\n\n// ---- уровень 7.1: дословная транскрипция ----\nconst lines = [];\nfor (const r of rows) {\n  lines.push('--- Вопрос ' + r.order_no + '  [' + r.competency_name + '] ---');\n  lines.push('Аватар: ' + r.question_text);\n  lines.push('Кандидат: ' + r.transcript);\n  lines.push('');\n}\n\n// ---- материал для модели + агрегаты ----\nconst parts = [];\nlet kuSum = 0;\nlet kuCnt = 0;\nlet wpmSum = 0;\nlet wpmCnt = 0;\nlet pauseSum = 0;\nconst perComp = {};\n\nfor (const r of rows) {\n  let ku = r.ku_level;\n  if (ku === null) ku = 0;\n  if (ku === undefined) ku = 0;\n  ku = Number(ku);\n\n  if (ku > 0) {\n    kuSum = kuSum + ku;\n    kuCnt = kuCnt + 1;\n    if (!perComp[r.competency_name]) perComp[r.competency_name] = [];\n    perComp[r.competency_name].push(ku);\n  }\n\n  const w = Number(r.wpm);\n  if (w > 0) { wpmSum = wpmSum + w; wpmCnt = wpmCnt + 1; }\n\n  const p = Number(r.pause_total_sec);\n  if (p > 0) pauseSum = pauseSum + p;\n\n  let b = 'Компетенция: ' + r.competency_name + '\\n';\n  b += 'Вопрос: ' + r.question_text + '\\n';\n  b += 'Ответ кандидата: ' + r.transcript + '\\n';\n  b += 'Оценка КУ: ' + ku + '. ' + r.rationale + '\\n';\n  parts.push(b);\n}\n\nlet avgKu = 0;\nif (kuCnt > 0) avgKu = Math.round((kuSum / kuCnt) * 10) / 10;\n\nlet avgWpm = 0;\nif (wpmCnt > 0) avgWpm = Math.round(wpmSum / wpmCnt);\n\n// средний КУ по каждой компетенции\nconst compTable = [];\nfor (const name of Object.keys(perComp)) {\n  const arr = perComp[name];\n  let s = 0;\n  for (const v of arr) s = s + v;\n  compTable.push({ competency: name, ku: Math.round((s / arr.length) * 10) / 10 });\n}\n\nreturn [{ json: {\n  session_id:    head.session_id,\n  employee_id:   head.employee_id,\n  or_id:         head.or_id,\n  employee_name: head.employee_name,\n  is_training:   head.is_training,\n  flag_count:    Number(head.flag_count),\n  answers_count: rows.length,\n  avg_ku:        avgKu,\n  avg_wpm:       avgWpm,\n  pause_total:   Math.round(pauseSum),\n  comp_table:    compTable,\n  transcript:    lines.join('\\n'),\n  material:      parts.join('\\n---\\n')\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "3e5a55aa-c7fa-482a-be96-57b4f2af39b6",
+      "name": "2. Транскрипция и материал"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".reports (session_id, level, content, status)\nVALUES (\n  {{ $json.session_id }},\n  1,\n  '{{ JSON.stringify({ text: $json.transcript, answers: $json.answers_count }).replaceAll(\"'\", \"''\") }}'::jsonb,\n  'ready'\n)\nON CONFLICT (session_id, level) DO UPDATE\nSET content = EXCLUDED.content, created_at = now()\nRETURNING id, session_id, level;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        624,
+        0
+      ],
+      "id": "9be8e3dd-e457-4e2a-8d8a-d64649f7822e",
+      "name": "3. Записать транскрипцию",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Ты аналитик, который готовит отчёт по результатам технического собеседования аналитика BI.\n\nКандидат: {{ $('2. Транскрипция и материал').first().json.employee_name }}\nСредний карьерный уровень по сессии: {{ $('2. Транскрипция и материал').first().json.avg_ku }} из 5\n\nМатериал:\n{{ $('2. Транскрипция и материал').first().json.material }}\n\nВерни JSON-объект строго такой формы:\n{\"strengths\": [\"...\"], \"gaps\": [\"...\"], \"recommendations\": [\"...\"], \"employee_summary\": \"...\"}\n\nПравила:\n- strengths: 2-4 пункта, что кандидат делает уверенно. Опирайся на конкретные ответы.\n- gaps: 2-4 пункта, где не хватает глубины. Формулируй как зону роста, без ярлыков и оценок личности.\n- recommendations: 2-4 конкретных шага развития. Что изучить, что попрактиковать.\n- employee_summary: 3-4 предложения обращения К САМОМУ КАНДИДАТУ на \"вы\". Поддерживающий тон, сначала сильные стороны, потом зоны роста. Без цифр и без оценок.\n- Всё по-русски. Никаких пояснений вне JSON.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        832,
+        0
+      ],
+      "id": "06f9c353-3406-41e6-a7aa-f808ddf26735",
+      "name": "4. LLM анализ"
+    },
+    {
+      "parameters": {
+        "model": "llama3.2:3b",
+        "options": {
+          "temperature": 0.3,
+          "numCtx": 4096,
+          "numPredict": 2000,
+          "format": "json"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        768,
+        208
+      ],
+      "id": "6914a621-7417-40d9-9dd9-e2b456295382",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "jvyHtGYXHyiP9QXE",
+          "name": "Ollama account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $('2. Транскрипция и материал').first().json;\n\nlet parsed = null;\n\nfunction eat(v, depth) {\n  if (parsed !== null) return;\n  if (v === null) return;\n  if (v === undefined) return;\n  if (depth > 5) return;\n\n  if (Array.isArray(v)) { for (const x of v) eat(x, depth + 1); return; }\n\n  if (typeof v === 'string') {\n    const c = v.indexOf('{');\n    const d = v.lastIndexOf('}');\n    if (c === -1) return;\n    if (d <= c) return;\n    const frag = v.slice(c, d + 1);\n    try { eat(JSON.parse(frag), depth + 1); }\n    catch (e1) {\n      try { eat(JSON.parse(frag.replace(/,\\s*([}\\]])/g, '$1')), depth + 1); }\n      catch (e2) { return; }\n    }\n    return;\n  }\n\n  if (typeof v === 'object') {\n    if (v.employee_summary !== undefined) { parsed = v; return; }\n    if (v.strengths !== undefined) { parsed = v; return; }\n    for (const x of Object.values(v)) eat(x, depth + 1);\n  }\n}\n\nfor (const item of $input.all()) eat(item.json, 0);\n\nfunction arr(v) {\n  if (Array.isArray(v)) return v.map(x => String(x));\n  if (typeof v === 'string') { if (v.length > 0) return [v]; }\n  return [];\n}\n\nlet strengths = [];\nlet gaps = [];\nlet recs = [];\nlet summary = 'Отчёт сформирован. Обратная связь будет дополнена ответственным за развитие.';\n\nif (parsed !== null) {\n  strengths = arr(parsed.strengths);\n  gaps = arr(parsed.gaps);\n  recs = arr(parsed.recommendations);\n  if (parsed.employee_summary) summary = String(parsed.employee_summary);\n}\n\n// ---- уровень 7.2: полный отчёт для ОР ----\nconst reportOr = {\n  employee_name:  meta.employee_name,\n  session_id:     meta.session_id,\n  is_training:    meta.is_training,\n  answers_count:  meta.answers_count,\n  avg_ku:         meta.avg_ku,\n  competencies:   meta.comp_table,\n  behavior: {\n    avg_wpm:         meta.avg_wpm,\n    pause_total_sec: meta.pause_total\n  },\n  red_flags_count: meta.flag_count,\n  strengths:       strengths,\n  gaps:            gaps,\n  recommendations: recs,\n  model:           'llama3.2:3b'\n};\n\n// ---- уровень 7.3: фильтр для сотрудника ----\n// Сюда НЕ попадают: красные флаги, средний КУ, оценки по компетенциям,\n// обоснования модели, поведенческие метрики.\nconst reportEmp = {\n  employee_name:   meta.employee_name,\n  session_id:      meta.session_id,\n  is_training:     meta.is_training,\n  summary:         summary,\n  strengths:       strengths,\n  next_steps:      recs,\n  note:            'Обратная связь проверена ответственным за развитие.'\n};\n\nreturn [{ json: {\n  session_id:  meta.session_id,\n  parsed_ok:   parsed !== null,\n  report_or:   reportOr,\n  report_emp:  reportEmp\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        0
+      ],
+      "id": "9d5b2b3c-120d-469c-b7d8-9123c89fdda6",
+      "name": "5. Собрать отчёты"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".reports (session_id, level, content, status)\nVALUES (\n  {{ $json.session_id }},\n  2,\n  '{{ JSON.stringify($json.report_or).replaceAll(\"'\", \"''\") }}'::jsonb,\n  'ready'\n)\nON CONFLICT (session_id, level) DO UPDATE\nSET content = EXCLUDED.content, created_at = now()\nRETURNING id, session_id, level;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1392,
+        0
+      ],
+      "id": "d4579c3d-6778-4b48-b812-73c381dd9776",
+      "name": "6. Записать отчёт для ОР",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".reports (session_id, level, content, status)\nVALUES (\n  {{ $('5. Собрать отчёты').first().json.session_id }},\n  3,\n  '{{ JSON.stringify($('5. Собрать отчёты').first().json.report_emp).replaceAll(\"'\", \"''\") }}'::jsonb,\n  'draft'\n)\nON CONFLICT (session_id, level) DO UPDATE\nSET content = EXCLUDED.content, status = 'draft', published_by = NULL, published_at = NULL\nRETURNING id, session_id, level, status;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1600,
+        0
+      ],
+      "id": "ed1a5de2-33c0-4824-a28f-906b8c707085",
+      "name": "7. Записать отчёт для сотрудника",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".interview_sessions\nSET status = 'evaluated'\nWHERE id = {{ $json.session_id }}\nRETURNING id, status;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1808,
+        0
+      ],
+      "id": "3fc864df-b864-4319-804e-049445ea9507",
+      "name": "8. Отметить сессию",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2016,
+        0
+      ],
+      "id": "ba1e0952-1eea-4426-ad35-74e198d5dd28",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "1. Данные сессии",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Данные сессии": {
+      "main": [
+        [
+          {
+            "node": "2. Транскрипция и материал",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Транскрипция и материал": {
+      "main": [
+        [
+          {
+            "node": "3. Записать транскрипцию",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Записать транскрипцию": {
+      "main": [
+        [
+          {
+            "node": "4. LLM анализ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "4. LLM анализ",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. LLM анализ": {
+      "main": [
+        [
+          {
+            "node": "5. Собрать отчёты",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Собрать отчёты": {
+      "main": [
+        [
+          {
+            "node": "6. Записать отчёт для ОР",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Записать отчёт для ОР": {
+      "main": [
+        [
+          {
+            "node": "7. Записать отчёт для сотрудника",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. Записать отчёт для сотрудника": {
+      "main": [
+        [
+          {
+            "node": "8. Отметить сессию",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8. Отметить сессию": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "df08b3c3-8208-46f6-8df4-91fa101840cb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "2kiH6rsk17xwR2S6",
+  "tags": []
+}

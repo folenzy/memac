@@ -1,0 +1,983 @@
+{
+  "name": "МеМАС · Парсер гайдбука",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\nconst bin = $input.first().binary;\n\nif (!bin) throw new Error('Файл не приложен');\n\nconst keys = Object.keys(bin);\nif (keys.length === 0) throw new Error('Бинарных полей нет');\n\nconst empId = Number(j['ID сотрудника']);\nif (!empId) throw new Error('Не указан ID сотрудника. Поля: ' + Object.keys(j).join(', '));\n\n// кладём файл под фиксированным именем\nconst out = {};\nout['gb'] = bin[keys[0]];\n\nreturn [{\n  json: { employee_id: empId, binary_name_was: keys[0] },\n  binary: out\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "0943cd54-ec19-4e50-9763-df35326b52e6",
+      "name": "G0. Проверка входа"
+    },
+    {
+      "parameters": {
+        "formTitle": "МеМАС — загрузка гайдбука",
+        "formDescription": "Файл .xlsx с компетенциями специальности",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Файл гайдбука",
+              "fieldType": "file",
+              "acceptFileTypes": ".xlsx"
+            },
+            {
+              "fieldLabel": "ID сотрудника",
+              "fieldType": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "id": "9720d9da-cb28-4236-826f-972e7ca26fdb",
+      "name": "Форма загрузки",
+      "webhookId": "b5645917-570f-4be0-a140-fb6c31743969"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "gb",
+        "options": {
+          "sheetName": "Навыки"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        384,
+        -368
+      ],
+      "id": "5d162406-de73-47d6-9b2e-177bc2f4e1b9",
+      "name": "Н1. Лист Навыки"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nif (rows.length === 0) throw new Error('Лист пустой или не найден');\n\nreturn [{ json: {\n  headers_text: Object.keys(rows[0]).join(' | '),\n  row_count:    rows.length,\n  rows:         rows\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        -368
+      ],
+      "id": "ecae3784-16fa-403b-a832-8c5b74309144",
+      "name": "Н2. Заголовки"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ↓↓↓ ТОЛЬКО ЭТИ ЧЕТЫРЕ СТРОКИ РАЗЛИЧАЮТСЯ МЕЖДУ ВЕТКАМИ ↓↓↓\nconst PREV_NODE = 'Н2. Заголовки';\nconst SHEET     = 'навыки';\nconst REQUIRED  = 'skill_name';\nconst ALLOWED   = ['specialty','knowledge_area','competency','competency_description',\n                   'skill_name','skill_type','skill_description',\n                   'development_indicators','success_criteria'];\n// ↑↑↑\n\nconst j = $input.first().json;\nlet raw = '';\n\n// текст лежит в choices[0].message.content\ntry { raw = String(j.choices[0].message.content || ''); } catch (e) { raw = ''; }\n\n// запасной путь, если структура иная\nif (!raw) {\n  for (const v of Object.values(j)) {\n    if (typeof v === 'string' && v.length > raw.length) raw = v;\n  }\n}\nif (!raw) throw new Error('Пустой ответ. Поля: ' + Object.keys(j).join(', '));\n\n// снимаем рассуждения Qwen3\nraw = raw.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');\nraw = raw.replace(/<think>[\\s\\S]*/gi, '');\n\nraw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();\nconst s = raw.indexOf('{');\nconst e = raw.lastIndexOf('}');\nif (s === -1) throw new Error('В ответе нет JSON: ' + raw.slice(0, 200));\n\nlet map;\ntry { map = JSON.parse(raw.slice(s, e + 1)); }\ncatch (err) { map = JSON.parse(raw.slice(s, e + 1).replace(/,\\s*([}\\]])/g, '$1')); }\n\n// отбрасываем поля, которых нет в схеме — защита от выдумок модели\nconst clean = {};\nfor (const [col, field] of Object.entries(map)) {\n  if (ALLOWED.indexOf(field) !== -1) clean[col] = field;\n}\nif (Object.keys(clean).length === 0) {\n  throw new Error('Маппинг пустой. Модель вернула: ' + JSON.stringify(map));\n}\n\nconst rows = $(PREV_NODE).first().json.rows;\nconst out = [];\n\nfor (const r of rows) {\n  const o = { source_sheet: SHEET };\n  for (const [col, field] of Object.entries(clean)) {\n    const v = r[col];\n    if (v === undefined || v === null || String(v).trim() === '') o[field] = null;\n    else o[field] = String(v).trim();\n  }\n  if (!o.specialty) o.specialty = 'Аналитик BI';\n  if (o[REQUIRED]) out.push({ json: o });\n}\n\nif (out.length === 0) {\n  throw new Error('Ни одной строки не разложилось. Маппинг: ' + JSON.stringify(clean));\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        -368
+      ],
+      "id": "b606e689-f37c-4113-bd15-82fefff4225d",
+      "name": "Н4. Применить маппинг"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "ASiruk",
+          "mode": "list",
+          "cachedResultName": "ASiruk"
+        },
+        "table": {
+          "__rl": true,
+          "value": "guidebook_skills",
+          "mode": "list",
+          "cachedResultName": "guidebook_skills"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {
+            "id": 0
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "specialty",
+              "displayName": "specialty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "knowledge_area",
+              "displayName": "knowledge_area",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "competency",
+              "displayName": "competency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "skill_name",
+              "displayName": "skill_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "skill_type",
+              "displayName": "skill_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "skill_description",
+              "displayName": "skill_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "development_indicators",
+              "displayName": "development_indicators",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "success_criteria",
+              "displayName": "success_criteria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_sheet",
+              "displayName": "source_sheet",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "competency_description",
+              "displayName": "competency_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1392,
+        -368
+      ],
+      "id": "fec4a7ca-bda5-4706-87a0-aca299cd6277",
+      "name": "Н5. Записать навыки",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "gb",
+        "options": {
+          "sheetName": "Задачи"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        -16
+      ],
+      "id": "082c66a8-d0af-4d35-be7a-4a537a6fe60a",
+      "name": "З1. Лист Задачи"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "ASiruk",
+          "mode": "list",
+          "cachedResultName": "ASiruk"
+        },
+        "table": {
+          "__rl": true,
+          "value": "guidebook_tasks",
+          "mode": "list",
+          "cachedResultName": "guidebook_tasks"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "specialty",
+              "displayName": "specialty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "responsibility_area",
+              "displayName": "responsibility_area",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "task",
+              "displayName": "task",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "career_level",
+              "displayName": "career_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "aspect_description",
+              "displayName": "aspect_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_sheet",
+              "displayName": "source_sheet",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1424,
+        -16
+      ],
+      "id": "33ecac91-e850-4aa3-8d8c-266f61be5bbf",
+      "name": "З5. Записать навыки",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const PREV_NODE = 'З2. Заголовки';\nconst SHEET     = 'задачи';\nconst REQUIRED  = 'task';\nconst ALLOWED   = ['specialty','responsibility_area','task','career_level','aspect_description'];\n\nconst j = $input.first().json;\nlet raw = '';\n\n// текст лежит в choices[0].message.content\ntry { raw = String(j.choices[0].message.content || ''); } catch (e) { raw = ''; }\n\n// запасной путь, если структура иная\nif (!raw) {\n  for (const v of Object.values(j)) {\n    if (typeof v === 'string' && v.length > raw.length) raw = v;\n  }\n}\nif (!raw) throw new Error('Пустой ответ. Поля: ' + Object.keys(j).join(', '));\n\n// снимаем рассуждения Qwen3\nraw = raw.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');\nraw = raw.replace(/<think>[\\s\\S]*/gi, '');\n\nraw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();\nconst s = raw.indexOf('{');\nconst e = raw.lastIndexOf('}');\nif (s === -1) throw new Error('В ответе нет JSON: ' + raw.slice(0, 200));\n\nlet map;\ntry { map = JSON.parse(raw.slice(s, e + 1)); }\ncatch (err) { map = JSON.parse(raw.slice(s, e + 1).replace(/,\\s*([}\\]])/g, '$1')); }\n\nconst clean = {};\nfor (const [col, field] of Object.entries(map)) {\n  if (ALLOWED.indexOf(field) !== -1) clean[col] = field;\n}\nif (Object.keys(clean).length === 0) {\n  throw new Error('Маппинг пустой. Модель вернула: ' + JSON.stringify(map));\n}\n\nconst rows = $(PREV_NODE).first().json.rows;\nconst out = [];\n\nfor (const r of rows) {\n  const o = { source_sheet: SHEET };\n  for (const [col, field] of Object.entries(clean)) {\n    const v = r[col];\n    if (v === undefined || v === null || String(v).trim() === '') o[field] = null;\n    else o[field] = String(v).trim();\n  }\n  if (!o.specialty) o.specialty = 'Аналитик BI';\n  if (o[REQUIRED]) out.push({ json: o });\n}\n\nif (out.length === 0) {\n  throw new Error('Ни одной строки не разложилось. Маппинг: ' + JSON.stringify(clean));\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        -16
+      ],
+      "id": "fb48ab10-df35-4a3e-85fa-ad3d2902a747",
+      "name": "З4. Применить маппинг"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "gb",
+        "options": {
+          "sheetName": "Принципы"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        432,
+        304
+      ],
+      "id": "09ea3434-881d-44fe-804c-fae74decf3b1",
+      "name": "П1. Лист Принципы"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nif (rows.length === 0) throw new Error('Лист пустой или не найден');\n\nreturn [{ json: {\n  headers_text: Object.keys(rows[0]).join(' | '),\n  row_count:    rows.length,\n  rows:         rows\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        304
+      ],
+      "id": "e9bf421f-f3c0-4512-9d2f-f833977d76cd",
+      "name": "П2. Заголовки"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ↓↓↓ ТОЛЬКО ЭТИ ЧЕТЫРЕ СТРОКИ РАЗЛИЧАЮТСЯ МЕЖДУ ВЕТКАМИ ↓↓↓\nconst PREV_NODE = 'П2. Заголовки';\nconst SHEET     = 'принципы';\nconst REQUIRED  = 'principle';\nconst ALLOWED   = ['specialty','soft_skill_area','principle','behavior_options'];\n// ↑↑↑\n\nconst j = $input.first().json;\nlet raw = '';\n\n// текст лежит в choices[0].message.content\ntry { raw = String(j.choices[0].message.content || ''); } catch (e) { raw = ''; }\n\n// запасной путь, если структура иная\nif (!raw) {\n  for (const v of Object.values(j)) {\n    if (typeof v === 'string' && v.length > raw.length) raw = v;\n  }\n}\nif (!raw) throw new Error('Пустой ответ. Поля: ' + Object.keys(j).join(', '));\n\n// снимаем рассуждения Qwen3\nraw = raw.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');\nraw = raw.replace(/<think>[\\s\\S]*/gi, '');\n\nraw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();\nconst s = raw.indexOf('{');\nconst e = raw.lastIndexOf('}');\nif (s === -1) throw new Error('В ответе нет JSON: ' + raw.slice(0, 200));\n\nlet map;\ntry { map = JSON.parse(raw.slice(s, e + 1)); }\ncatch (err) { map = JSON.parse(raw.slice(s, e + 1).replace(/,\\s*([}\\]])/g, '$1')); }\n\n// отбрасываем поля, которых нет в схеме — защита от выдумок модели\nconst clean = {};\nfor (const [col, field] of Object.entries(map)) {\n  if (ALLOWED.indexOf(field) !== -1) clean[col] = field;\n}\nif (Object.keys(clean).length === 0) {\n  throw new Error('Маппинг пустой. Модель вернула: ' + JSON.stringify(map));\n}\n\nconst rows = $(PREV_NODE).first().json.rows;\nconst out = [];\n\nfor (const r of rows) {\n  const o = { source_sheet: SHEET };\n  for (const [col, field] of Object.entries(clean)) {\n    const v = r[col];\n    if (v === undefined || v === null || String(v).trim() === '') o[field] = null;\n    else o[field] = String(v).trim();\n  }\n  if (!o.specialty) o.specialty = 'Аналитик BI';\n  if (o[REQUIRED]) out.push({ json: o });\n}\n\nif (out.length === 0) {\n  throw new Error('Ни одной строки не разложилось. Маппинг: ' + JSON.stringify(clean));\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        304
+      ],
+      "id": "d86602f8-e523-46c8-ae07-f6eebb92d5db",
+      "name": "П4. Применить маппинг"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "ASiruk",
+          "mode": "list",
+          "cachedResultName": "ASiruk"
+        },
+        "table": {
+          "__rl": true,
+          "value": "guidebook_principles",
+          "mode": "list",
+          "cachedResultName": "guidebook_principles"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "specialty",
+              "displayName": "specialty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "principle",
+              "displayName": "principle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "behavior_options",
+              "displayName": "behavior_options",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_sheet",
+              "displayName": "source_sheet",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "soft_skill_area",
+              "displayName": "soft_skill_area",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1408,
+        304
+      ],
+      "id": "32f35601-bb96-43d6-8277-bb53d629ebe0",
+      "name": "П5. Записать навыки",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1680,
+        -32
+      ],
+      "id": "3d6314fa-0a6f-4722-aa33-acd731784c49",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH c1 AS (\n  INSERT INTO \"ASiruk\".competencies (specialty, knowledge_area, name, description, skill_type, kind)\n  SELECT g.specialty, min(g.knowledge_area), g.competency,\n         min(g.competency_description), min(g.skill_type), 'competency'\n  FROM \"ASiruk\".guidebook_skills g\n  WHERE g.competency IS NOT NULL AND g.specialty IS NOT NULL\n  GROUP BY g.specialty, g.competency\n  ON CONFLICT (specialty, kind, name) DO NOTHING\n  RETURNING 1\n), c2 AS (\n  INSERT INTO \"ASiruk\".competencies (specialty, knowledge_area, name, description, skill_type, kind)\n  SELECT g.specialty, min(g.responsibility_area), g.task, NULL, 'hard_skills', 'task'\n  FROM \"ASiruk\".guidebook_tasks g\n  WHERE g.task IS NOT NULL AND g.specialty IS NOT NULL\n  GROUP BY g.specialty, g.task\n  ON CONFLICT (specialty, kind, name) DO NOTHING\n  RETURNING 1\n), c3 AS (\n  INSERT INTO \"ASiruk\".competencies (specialty, knowledge_area, name, description, skill_type, kind)\n  SELECT g.specialty, min(g.soft_skill_area), g.principle, min(g.behavior_options), 'soft_skills', 'principle'\n  FROM \"ASiruk\".guidebook_principles g\n  WHERE g.principle IS NOT NULL AND g.specialty IS NOT NULL\n  GROUP BY g.specialty, g.principle\n  ON CONFLICT (specialty, kind, name) DO NOTHING\n  RETURNING 1\n), sk AS (\n  INSERT INTO \"ASiruk\".skills (competency_id, name, description, dev_indicators, success_criteria)\n  SELECT c.id, g.skill_name, g.skill_description, g.development_indicators, g.success_criteria\n  FROM \"ASiruk\".guidebook_skills g\n  JOIN \"ASiruk\".competencies c\n    ON c.kind = 'competency' AND c.specialty = g.specialty AND c.name = g.competency\n  WHERE g.skill_name IS NOT NULL\n    AND NOT EXISTS (SELECT 1 FROM \"ASiruk\".skills s\n                    WHERE s.competency_id = c.id AND s.name = g.skill_name)\n  RETURNING 1\n)\nSELECT (SELECT count(*) FROM c1) AS компетенций,\n       (SELECT count(*) FROM c2) AS задач,\n       (SELECT count(*) FROM c3) AS принципов,\n       (SELECT count(*) FROM sk) AS навыков;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2032,
+        -16
+      ],
+      "id": "9f8d61b8-d109-44a6-ac18-10a805c4f740",
+      "name": "F1. Пересобрать реестр",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH gb AS (\n  INSERT INTO \"ASiruk\".guidebooks (employee_id, specialty, filename, uploaded_by)\n  SELECT {{ $('G0. Проверка входа').first().json.employee_id }},\n         (SELECT specialty FROM \"ASiruk\".guidebook_skills LIMIT 1),\n         'загружен через форму',\n         NULL\n  RETURNING employee_id, specialty\n), ec AS (\n  INSERT INTO \"ASiruk\".employee_competencies (employee_id, competency_id, status)\n  SELECT gb.employee_id, c.id, 'not_started'\n  FROM gb\n  JOIN \"ASiruk\".competencies c ON c.specialty = gb.specialty\n  ON CONFLICT (employee_id, competency_id) DO NOTHING\n  RETURNING 1\n)\nSELECT (SELECT count(*) FROM ec) AS компетенций_назначено,\n       (SELECT count(*) FROM \"ASiruk\".guidebook_skills)     AS навыков_в_бд,\n       (SELECT count(*) FROM \"ASiruk\".guidebook_tasks)      AS задач_в_бд,\n       (SELECT count(*) FROM \"ASiruk\".guidebook_principles) AS принципов_в_бд;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2208,
+        -16
+      ],
+      "id": "e596a9f6-48e0-4a4c-82b4-6e622b8d3ea5",
+      "name": "F2. Привязать к сотруднику",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "Гайдбук загружен",
+        "completionMessage": "Компетенции разложены и привязаны к сотруднику",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        2368,
+        -16
+      ],
+      "id": "d518f181-986c-4027-966b-37d51e8ee895",
+      "name": "Form",
+      "webhookId": "5f87c470-66d9-4d16-a6eb-79ca6b00e9f1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nif (rows.length === 0) throw new Error('Лист пустой или не найден');\n\nreturn [{ json: {\n  headers_text: Object.keys(rows[0]).join(' | '),\n  row_count:    rows.length,\n  rows:         rows\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        -16
+      ],
+      "id": "7ad3b99a-3879-441c-a71c-351576708b81",
+      "name": "З2. Заголовки"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { rows_total: $input.all().length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        -16
+      ],
+      "id": "89f05f6a-0abc-4b36-9249-9243e634999e",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"Qwen/Qwen3-32B-AWQ\",\n  temperature: 0,\n  max_tokens: 500,\n  chat_template_kwargs: { enable_thinking: false },\n  messages: [\n    { role: \"system\", content: \"Сопоставь колонки Excel с полями базы данных. Ответь только JSON-объектом, без пояснений и markdown.\" },\n    { role: \"user\", content: \"Колонки файла: \" + $json.headers_text + \"\\n\\nПоля базы: specialty, knowledge_area, competency, competency_description, skill_name, skill_type, skill_description, development_indicators, success_criteria\\n\\nВерни JSON вида {\\\"название колонки\\\":\\\"поле_базы\\\"}. Колонку без подходящего поля не включай.\" }\n  ]\n}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        816,
+        -368
+      ],
+      "id": "cd63b648-8793-4432-aa19-4dcbbc818a5d",
+      "name": "Н3. Маппинг колонок"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"Qwen/Qwen3-32B-AWQ\",\n  temperature: 0,\n  max_tokens: 500,\n  chat_template_kwargs: { enable_thinking: false },\n  messages: [\n    { role: \"system\", content: \"Сопоставь колонки Excel с полями базы данных. Ответь только JSON-объектом, без пояснений и markdown.\" },\n    { role: \"user\", content: \"Колонки файла: \" + $json.headers_text + \"\\n\\nПоля базы: specialty, responsibility_area, task, career_level, aspect_description\\n\\nВерни JSON вида {\\\"название колонки\\\":\\\"поле_базы\\\"}. Колонку без подходящего поля не включай.\" }\n  ]\n}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        944,
+        -16
+      ],
+      "id": "881cc9c0-836d-4069-9ea9-c1ef43d8ea29",
+      "name": "З3. Маппинг колонок"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"Qwen/Qwen3-32B-AWQ\",\n  temperature: 0,\n  max_tokens: 500,\n  chat_template_kwargs: { enable_thinking: false },\n  messages: [\n    { role: \"system\", content: \"Сопоставь колонки Excel с полями базы данных. Ответь только JSON-объектом, без пояснений и markdown.\" },\n    { role: \"user\", content: \"Колонки файла: \" + $json.headers_text + \"\\n\\nПоля базы:specialty, soft_skill_area, principle, behavior_options \\n\\nВерни JSON вида {\\\"название колонки\\\":\\\"поле_базы\\\"}. Колонку без подходящего поля не включай.\" }\n  ]\n}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        928,
+        304
+      ],
+      "id": "4d66dfe9-e166-4cf0-ae12-f8422512ac2f",
+      "name": "П3. Маппинг колонок"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Форма загрузки": {
+      "main": [
+        [
+          {
+            "node": "G0. Проверка входа",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "G0. Проверка входа": {
+      "main": [
+        [
+          {
+            "node": "Н1. Лист Навыки",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "З1. Лист Задачи",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "П1. Лист Принципы",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Н1. Лист Навыки": {
+      "main": [
+        [
+          {
+            "node": "Н2. Заголовки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Н2. Заголовки": {
+      "main": [
+        [
+          {
+            "node": "Н3. Маппинг колонок",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Н4. Применить маппинг": {
+      "main": [
+        [
+          {
+            "node": "Н5. Записать навыки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "З1. Лист Задачи": {
+      "main": [
+        [
+          {
+            "node": "З2. Заголовки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "З4. Применить маппинг": {
+      "main": [
+        [
+          {
+            "node": "З5. Записать навыки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "П1. Лист Принципы": {
+      "main": [
+        [
+          {
+            "node": "П2. Заголовки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "П2. Заголовки": {
+      "main": [
+        [
+          {
+            "node": "П3. Маппинг колонок",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "П4. Применить маппинг": {
+      "main": [
+        [
+          {
+            "node": "П5. Записать навыки",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "З5. Записать навыки": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Н5. Записать навыки": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "П5. Записать навыки": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F1. Пересобрать реестр": {
+      "main": [
+        [
+          {
+            "node": "F2. Привязать к сотруднику",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F2. Привязать к сотруднику": {
+      "main": [
+        [
+          {
+            "node": "Form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "З2. Заголовки": {
+      "main": [
+        [
+          {
+            "node": "З3. Маппинг колонок",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "F1. Пересобрать реестр",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Н3. Маппинг колонок": {
+      "main": [
+        [
+          {
+            "node": "Н4. Применить маппинг",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "З3. Маппинг колонок": {
+      "main": [
+        [
+          {
+            "node": "З4. Применить маппинг",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "П3. Маппинг колонок": {
+      "main": [
+        [
+          {
+            "node": "П4. Применить маппинг",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c21e372c-861f-4dc5-a893-7976e01a6aa8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "0KHIEnAU9ua6V8cX",
+  "tags": []
+}

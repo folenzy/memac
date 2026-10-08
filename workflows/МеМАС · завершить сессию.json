@@ -1,0 +1,245 @@
+{
+  "name": "МеМАС · завершить сессию",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "finish-session",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "731a0bc8-408b-4f54-8dce-cd9f67e728ab",
+      "name": "Webhook",
+      "webhookId": "a79923cc-21e0-41e0-bad7-a62329b26b67"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".interview_sessions\nSET status      = 'completed',\n    finished_at = coalesce(finished_at, now())\nWHERE id = {{ $json.body.session_id }}\nRETURNING id AS session_id, employee_id, is_training,\n          extract(epoch FROM (finished_at - started_at))::int AS elapsed_sec;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "e974b7ad-54e9-405b-9eca-3bc6903a5bef",
+      "name": "1. Закрыть сессию",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.id AS answer_id, a.audio_path, a.transcript,\n       {{ $json.session_id }} AS session_id\nFROM \"ASiruk\".session_answers a\nWHERE a.session_id = {{ $json.session_id }}\n  AND a.audio_path IS NOT NULL\nORDER BY a.id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        0
+      ],
+      "id": "d41c88de-178c-4885-9b79-81a05fd8e356",
+      "name": "2. Ответы сессии",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const WORDS = ['зарплат', 'оклад', 'компенсац', 'вилк', 'з/п', 'зп ',\n               'сколько платят', 'деньг', 'доход', 'ставка', 'оффер'];\n\nconst rows = $input.all().map(i => i.json);\nconst flags = [];\n\nfor (const r of rows) {\n  const t = String(r.transcript || '').toLowerCase();\n  if (!t) continue;\n  for (const w of WORDS) {\n    if (t.indexOf(w) !== -1) {\n      const pos = t.indexOf(w);\n      let from = pos - 40;\n      if (from < 0) from = 0;\n      flags.push({\n        session_id: r.session_id,\n        answer_id:  r.answer_id,\n        flag_type:  'salary',\n        evidence:   String(r.transcript).slice(from, pos + 60)\n      });\n      break;\n    }\n  }\n}\n\nreturn [{ json: {\n  session_id: rows.length ? rows[0].session_id : null,\n  answers:    rows,\n  flags:      flags,\n  flag_count: flags.length\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "5660561a-1905-4bcb-b735-cabd2e8fc841",
+      "name": "3. Красные флаги"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".red_flags (session_id, answer_id, flag_type, evidence)\nSELECT (f->>'session_id')::int, (f->>'answer_id')::int,\n       f->>'flag_type', f->>'evidence'\nFROM jsonb_array_elements('{{ JSON.stringify($json.flags) }}'::jsonb) AS f\nRETURNING id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        832,
+        0
+      ],
+      "id": "7deed45c-38b5-4119-9721-aea32ab9ba5f",
+      "name": "4. Записать флаги",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8019/metrics",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ answers: $('3. Красные флаги').first().json.answers }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "6c278f0c-2f20-4983-b637-347ddb32bed9",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".audio_metrics\n    (answer_id, wpm, pause_count, pause_total_sec, rms_mean, rms_std)\nSELECT (m->>'answer_id')::int, (m->>'wpm')::numeric,\n       (m->>'pause_count')::int, (m->>'pause_total_sec')::numeric,\n       (m->>'rms_mean')::numeric, (m->>'rms_std')::numeric\nFROM jsonb_array_elements('{{ JSON.stringify($json.metrics) }}'::jsonb) AS m\nRETURNING answer_id, wpm;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1248,
+        0
+      ],
+      "id": "72cca565-f274-41d7-8b3c-fc9d3a562807",
+      "name": "6. Записать метрики",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1456,
+        0
+      ],
+      "id": "5cbbe95e-639e-4385-9eb3-2e589b94ba72",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "1. Закрыть сессию",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Закрыть сессию": {
+      "main": [
+        [
+          {
+            "node": "2. Ответы сессии",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Ответы сессии": {
+      "main": [
+        [
+          {
+            "node": "3. Красные флаги",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Красные флаги": {
+      "main": [
+        [
+          {
+            "node": "4. Записать флаги",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Записать флаги": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "6. Записать метрики",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Записать метрики": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e62b6877-e792-4d20-863d-587fc4b60d84",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "fh77nkCN6l864whG",
+  "tags": []
+}

@@ -1,0 +1,695 @@
+{
+  "name": "МеМАС · генератор вопросов",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        0
+      ],
+      "id": "9bebe035-e341-45e8-a33f-cb2699678d4f",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id,\n       '[id=' || id || '] Компетенция: ' || competency || \n       ' | Навык: '  ||   skill_name ||\n       ' | Тип: '    ||   coalesce(skill_type, '') ||\n       ' | Описание: ' || coalesce(skill_description, '') AS row_text\nFROM \"ASiruk\".guidebook_skills g\nWHERE NOT EXISTS (\n    SELECT 1 FROM \"ASiruk\".interview_questions q\n    WHERE q.source_table = 'guidebook_skills' AND q.source_id = g.id\n)\nORDER BY id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -304,
+        0
+      ],
+      "id": "28bb942a-59e3-4692-958d-5c93009b8082",
+      "name": "Get skills",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id,\n       '[id=' || id || '] Принцип: ' || principle ||\n       ' | Область: ' || coalesce(soft_skill_area, '') ||\n       ' | Маркеры: ' || coalesce(behavior_options, '') AS row_text\nFROM \"ASiruk\".guidebook_principles g\nWHERE NOT EXISTS (\n    SELECT 1 FROM \"ASiruk\".interview_questions q\n    WHERE q.source_table = 'guidebook_principles' AND q.source_id = g.id)\nORDER BY id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -304,
+        -176
+      ],
+      "id": "d18b3b69-19ca-4779-9375-320fffdb997c",
+      "name": "Get Principles",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id,\n       '[id=' || id || '] Задача: ' || task ||\n       ' | Зона: '   ||   coalesce(responsibility_area, '') ||\n       ' | Уровень: ' ||  coalesce(career_level, '') ||\n       ' | Описание: ' || coalesce(aspect_description, '') AS row_text\nFROM \"ASiruk\".guidebook_tasks g\nWHERE NOT EXISTS (\n    SELECT 1 FROM \"ASiruk\".interview_questions q\n    WHERE q.source_table = 'guidebook_tasks' AND q.source_id = g.id)\nORDER BY id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -544,
+        496
+      ],
+      "id": "1abe202a-a1dd-4572-b065-a06a0c5727a8",
+      "name": "Get Tasks",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1232,
+        -16
+      ],
+      "id": "31761ca8-fdb5-4b57-941a-5711d2d20a91",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "ASiruk",
+          "mode": "name"
+        },
+        "table": {
+          "__rl": true,
+          "value": "interview_questions",
+          "mode": "list",
+          "cachedResultName": "interview_questions"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {
+            "id": 0,
+            "source_id": 0
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source_table",
+              "displayName": "source_table",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source_id",
+              "displayName": "source_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "question_type",
+              "displayName": "question_type",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "question_text",
+              "displayName": "question_text",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reference_answer",
+              "displayName": "reference_answer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "options",
+              "displayName": "options",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reviewer_comment",
+              "displayName": "reviewer_comment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1424,
+        0
+      ],
+      "id": "d71ffadf-71f8-4bb1-855b-9830ed035197",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "row_text"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        160,
+        144
+      ],
+      "id": "c4422595-21b7-4e50-b078-e968ba97967c",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "row_text"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        176,
+        -176
+      ],
+      "id": "e8ed4474-1d0e-4bdb-9176-851ddc630697",
+      "name": "Aggregate1"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "row_text"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        112,
+        416
+      ],
+      "id": "77123714-f93a-451b-8321-0f048646878d",
+      "name": "Aggregate2"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -112,
+        0
+      ],
+      "id": "a5eadd87-f4aa-4b59-810a-a7472ed537c1",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "const SOURCE_TABLE = 'guidebook_principles';\nconst AGG_NODE     = 'Aggregate1';\n\n// при Batch Size 1 в батче ровно одна строка — её id и берём\nconst sent = $(AGG_NODE).first().json.row_text;\nconst line = Array.isArray(sent) ? String(sent[0]) : String(sent);\nconst m = line.match(/\\[id=(\\d+)\\]/);\nif (!m) throw new Error('Нет маркера id в строке: ' + line.slice(0, 200));\nconst SOURCE_ID = Number(m[1]);\nlet raw = '';\nfor (const item of $input.all()) {\n  try {\n    const t = String(item.json.choices[0].message.content || '');\n    if (t.length > raw.length) raw = t;\n  } catch (e) {\n    for (const v of Object.values(item.json)) {\n      if (typeof v === 'string' && v.length > raw.length) raw = v;\n    }\n  }\n}\nraw = raw.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');\nraw = raw.replace(/<think>[\\s\\S]*/gi, '');\n\nif (!raw) throw new Error('LLM ничего не вернула');\n\nconst out = [];\n\nfunction push(qt, txt, ref) {\n  const t = String(txt || '').trim();\n  if (t.length < 15) return;\n  out.push({\n    source_table:     SOURCE_TABLE,\n    source_id:        SOURCE_ID,\n    question_type:    ['theory','practice','case'].indexOf(qt) !== -1 ? qt : 'theory',\n    question_text:    t,\n    reference_answer: String(ref || '').trim(),\n    status:           'draft'\n  });\n}\n\n// попытка 1: разобрать как JSON\nlet parsed = null;\nconst s = raw.indexOf('{');\nconst e = raw.lastIndexOf('}');\nif (s !== -1 && e > s) {\n  const frag = raw.slice(s, e + 1);\n  try { parsed = JSON.parse(frag); }\n  catch (e1) {\n    try { parsed = JSON.parse(frag.replace(/,\\s*([}\\]])/g, '$1')); }\n    catch (e2) { parsed = null; }\n  }\n}\n\nfunction eat(v, depth) {\n  if (v === null) return;\n  if (v === undefined) return;\n  if (depth > 5) return;\n  if (Array.isArray(v)) { for (const x of v) eat(x, depth + 1); return; }\n  if (typeof v === 'object') {\n    if (v.question_text) { push(v.question_type, v.question_text, v.reference_answer); return; }\n    for (const x of Object.values(v)) eat(x, depth + 1);\n  }\n}\nif (parsed) eat(parsed, 0);\n\n// попытка 2: вытащить пары регулярками, если JSON битый\nif (out.length === 0) {\n  const qs = raw.match(/\"question_text\"\\s*:\\s*\"([^\"]{15,400})\"/g) || [];\n  const as = raw.match(/\"reference_answer\"\\s*:\\s*\"([^\"]{0,600})\"/g) || [];\n  for (let i = 0; i < qs.length; i++) {\n    const q = qs[i].replace(/^\"question_text\"\\s*:\\s*\"/, '').replace(/\"$/, '');\n    let a = '';\n    if (as[i]) a = as[i].replace(/^\"reference_answer\"\\s*:\\s*\"/, '').replace(/\"$/, '');\n    push(i === 0 ? 'theory' : 'practice', q, a);\n  }\n}\n\nif (out.length === 0) {\n  throw new Error('Вопросов не найдено. id=' + SOURCE_ID + '. Ответ: ' + raw.slice(0, 400));\n}\nreturn out.map(o => ({ json: o }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        -336
+      ],
+      "id": "626cbcee-daf4-46cd-84db-e0b549b9f9d5",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const SOURCE_TABLE = 'guidebook_skills';\nconst AGG_NODE     = 'Aggregate';\n\n// при Batch Size 1 в батче ровно одна строка — её id и берём\nconst sent = $(AGG_NODE).first().json.row_text;\nconst line = Array.isArray(sent) ? String(sent[0]) : String(sent);\nconst m = line.match(/\\[id=(\\d+)\\]/);\nif (!m) throw new Error('Нет маркера id в строке: ' + line.slice(0, 200));\nconst SOURCE_ID = Number(m[1]);\nlet raw = '';\nfor (const item of $input.all()) {\n  try {\n    const t = String(item.json.choices[0].message.content || '');\n    if (t.length > raw.length) raw = t;\n  } catch (e) {\n    for (const v of Object.values(item.json)) {\n      if (typeof v === 'string' && v.length > raw.length) raw = v;\n    }\n  }\n}\nraw = raw.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');\nraw = raw.replace(/<think>[\\s\\S]*/gi, '');\n\nif (!raw) throw new Error('LLM ничего не вернула');\n\nconst out = [];\n\nfunction push(qt, txt, ref) {\n  const t = String(txt || '').trim();\n  if (t.length < 15) return;\n  out.push({\n    source_table:     SOURCE_TABLE,\n    source_id:        SOURCE_ID,\n    question_type:    ['theory','practice','case'].indexOf(qt) !== -1 ? qt : 'theory',\n    question_text:    t,\n    reference_answer: String(ref || '').trim(),\n    status:           'draft'\n  });\n}\n\n// попытка 1: разобрать как JSON\nlet parsed = null;\nconst s = raw.indexOf('{');\nconst e = raw.lastIndexOf('}');\nif (s !== -1 && e > s) {\n  const frag = raw.slice(s, e + 1);\n  try { parsed = JSON.parse(frag); }\n  catch (e1) {\n    try { parsed = JSON.parse(frag.replace(/,\\s*([}\\]])/g, '$1')); }\n    catch (e2) { parsed = null; }\n  }\n}\n\nfunction eat(v, depth) {\n  if (v === null) return;\n  if (v === undefined) return;\n  if (depth > 5) return;\n  if (Array.isArray(v)) { for (const x of v) eat(x, depth + 1); return; }\n  if (typeof v === 'object') {\n    if (v.question_text) { push(v.question_type, v.question_text, v.reference_answer); return; }\n    for (const x of Object.values(v)) eat(x, depth + 1);\n  }\n}\nif (parsed) eat(parsed, 0);\n\n// попытка 2: вытащить пары регулярками, если JSON битый\nif (out.length === 0) {\n  const qs = raw.match(/\"question_text\"\\s*:\\s*\"([^\"]{15,400})\"/g) || [];\n  const as = raw.match(/\"reference_answer\"\\s*:\\s*\"([^\"]{0,600})\"/g) || [];\n  for (let i = 0; i < qs.length; i++) {\n    const q = qs[i].replace(/^\"question_text\"\\s*:\\s*\"/, '').replace(/\"$/, '');\n    let a = '';\n    if (as[i]) a = as[i].replace(/^\"reference_answer\"\\s*:\\s*\"/, '').replace(/\"$/, '');\n    push(i === 0 ? 'theory' : 'practice', q, a);\n  }\n}\n\nif (out.length === 0) {\n  throw new Error('Вопросов не найдено. id=' + SOURCE_ID + '. Ответ: ' + raw.slice(0, 400));\n}\nreturn out.map(o => ({ json: o }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        144
+      ],
+      "id": "f3c7a8be-e2fc-40cc-a637-5b429b27df40",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const SOURCE_TABLE = 'guidebook_tasks';\nconst AGG_NODE     = 'Aggregate2';\n\n// при Batch Size 1 в батче ровно одна строка — её id и берём\nconst sent = $(AGG_NODE).first().json.row_text;\nconst line = Array.isArray(sent) ? String(sent[0]) : String(sent);\nconst m = line.match(/\\[id=(\\d+)\\]/);\nif (!m) throw new Error('Нет маркера id в строке: ' + line.slice(0, 200));\nconst SOURCE_ID = Number(m[1]);\nlet raw = '';\nfor (const item of $input.all()) {\n  try {\n    const t = String(item.json.choices[0].message.content || '');\n    if (t.length > raw.length) raw = t;\n  } catch (e) {\n    for (const v of Object.values(item.json)) {\n      if (typeof v === 'string' && v.length > raw.length) raw = v;\n    }\n  }\n}\nraw = raw.replace(/<think>[\\s\\S]*?<\\/think>/gi, '');\nraw = raw.replace(/<think>[\\s\\S]*/gi, '');\n\nif (!raw) throw new Error('LLM ничего не вернула');\n\nconst out = [];\n\nfunction push(qt, txt, ref) {\n  const t = String(txt || '').trim();\n  if (t.length < 15) return;\n  out.push({\n    source_table:     SOURCE_TABLE,\n    source_id:        SOURCE_ID,\n    question_type:    ['theory','practice','case'].indexOf(qt) !== -1 ? qt : 'theory',\n    question_text:    t,\n    reference_answer: String(ref || '').trim(),\n    status:           'draft'\n  });\n}\n\n// попытка 1: разобрать как JSON\nlet parsed = null;\nconst s = raw.indexOf('{');\nconst e = raw.lastIndexOf('}');\nif (s !== -1 && e > s) {\n  const frag = raw.slice(s, e + 1);\n  try { parsed = JSON.parse(frag); }\n  catch (e1) {\n    try { parsed = JSON.parse(frag.replace(/,\\s*([}\\]])/g, '$1')); }\n    catch (e2) { parsed = null; }\n  }\n}\n\nfunction eat(v, depth) {\n  if (v === null) return;\n  if (v === undefined) return;\n  if (depth > 5) return;\n  if (Array.isArray(v)) { for (const x of v) eat(x, depth + 1); return; }\n  if (typeof v === 'object') {\n    if (v.question_text) { push(v.question_type, v.question_text, v.reference_answer); return; }\n    for (const x of Object.values(v)) eat(x, depth + 1);\n  }\n}\nif (parsed) eat(parsed, 0);\n\n// попытка 2: вытащить пары регулярками, если JSON битый\nif (out.length === 0) {\n  const qs = raw.match(/\"question_text\"\\s*:\\s*\"([^\"]{15,400})\"/g) || [];\n  const as = raw.match(/\"reference_answer\"\\s*:\\s*\"([^\"]{0,600})\"/g) || [];\n  for (let i = 0; i < qs.length; i++) {\n    const q = qs[i].replace(/^\"question_text\"\\s*:\\s*\"/, '').replace(/\"$/, '');\n    let a = '';\n    if (as[i]) a = as[i].replace(/^\"reference_answer\"\\s*:\\s*\"/, '').replace(/\"$/, '');\n    push(i === 0 ? 'theory' : 'practice', q, a);\n  }\n}\n\nif (out.length === 0) {\n  throw new Error('Вопросов не найдено. id=' + SOURCE_ID + '. Ответ: ' + raw.slice(0, 400));\n}\nreturn out.map(o => ({ json: o }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        432
+      ],
+      "id": "653bb004-bd98-4710-8a46-9805794bfc30",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -208,
+        512
+      ],
+      "id": "f244b34d-db69-4b7f-8b5f-4f68214930d3",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -96,
+        -256
+      ],
+      "id": "6cc460a8-a9d4-4040-9b9f-5a5868f0c182",
+      "name": "Loop Over Items2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"Qwen/Qwen3-32B-AWQ\",\n  temperature: 0.3,\n  max_tokens: 6000,\n  messages: [\n    { role: \"system\", content: \"/no_think Ты составляешь вопросы для собеседования аналитика BI. Отвечай только валидным JSON на русском языке. Не рассуждай, не объясняй.\" },\n    { role: \"user\", content: \"Составь 2 вопроса по этому фрагменту гайдбука:\\n\\n\" + $json.row_text.join(\"\\n\") + \"\\n\\nВерни ТОЛЬКО JSON:\\n{\\\"questions\\\":[{\\\"question_type\\\":\\\"theory\\\",\\\"question_text\\\":\\\"...\\\",\\\"reference_answer\\\":\\\"...\\\"},{\\\"question_type\\\":\\\"practice\\\",\\\"question_text\\\":\\\"...\\\",\\\"reference_answer\\\":\\\"...\\\"}]}\\n\\nПравила:\\n- Ровно 2 вопроса: первый theory, второй practice.\\n- question_text — открытый вопрос: Как, Почему, Каким образом, Расскажи, Опиши.\\n- reference_answer — 2-4 предложения: что должен раскрыть сильный кандидат.\\n- Только русский язык.\" }\n  ]\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        368,
+        -320
+      ],
+      "id": "01418856-1279-4eda-bd4c-6e47d2358991",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"Qwen/Qwen3-32B-AWQ\",\n  temperature: 0.3,\n  max_tokens: 6000,\n  messages: [\n    { role: \"system\", content: \"/no_think Ты составляешь вопросы для собеседования аналитика BI. Отвечай только валидным JSON на русском языке. Не рассуждай, не объясняй.\" },\n    { role: \"user\", content: \"Составь 2 вопроса по этому фрагменту гайдбука:\\n\\n\" + $json.row_text.join(\"\\n\") + \"\\n\\nВерни ТОЛЬКО JSON:\\n{\\\"questions\\\":[{\\\"question_type\\\":\\\"theory\\\",\\\"question_text\\\":\\\"...\\\",\\\"reference_answer\\\":\\\"...\\\"},{\\\"question_type\\\":\\\"practice\\\",\\\"question_text\\\":\\\"...\\\",\\\"reference_answer\\\":\\\"...\\\"}]}\\n\\nПравила:\\n- Ровно 2 вопроса: первый theory, второй practice.\\n- question_text — открытый вопрос: Как, Почему, Каким образом, Расскажи, Опиши.\\n- reference_answer — 2-4 предложения: что должен раскрыть сильный кандидат.\\n- Только русский язык.\" }\n  ]\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        416,
+        144
+      ],
+      "id": "02131ee8-6dd6-4126-b3c7-dc09a5fb286b",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"Qwen/Qwen3-32B-AWQ\",\n  temperature: 0.3,\n  max_tokens: 6000,\n  messages: [\n    { role: \"system\", content: \"/no_think Ты составляешь вопросы для собеседования аналитика BI. Отвечай только валидным JSON на русском языке. Не рассуждай, не объясняй.\" },\n    { role: \"user\", content: \"Составь 2 вопроса по этому фрагменту гайдбука:\\n\\n\" + $json.row_text.join(\"\\n\") + \"\\n\\nВерни ТОЛЬКО JSON:\\n{\\\"questions\\\":[{\\\"question_type\\\":\\\"theory\\\",\\\"question_text\\\":\\\"...\\\",\\\"reference_answer\\\":\\\"...\\\"},{\\\"question_type\\\":\\\"practice\\\",\\\"question_text\\\":\\\"...\\\",\\\"reference_answer\\\":\\\"...\\\"}]}\\n\\nПравила:\\n- Ровно 2 вопроса: первый theory, второй practice.\\n- question_text — открытый вопрос: Как, Почему, Каким образом, Расскажи, Опиши.\\n- reference_answer — 2-4 предложения: что должен раскрыть сильный кандидат.\\n- Только русский язык.\" }\n  ]\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        368,
+        416
+      ],
+      "id": "66e34610-ab01-47f1-8c2a-82934d1fa88b",
+      "name": "HTTP Request2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get skills",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Tasks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Principles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get skills": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Principles": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Tasks": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ],
+        [
+          {
+            "node": "Aggregate2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aggregate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "39cfadcb-80df-4576-8d9a-1cb56b89db7f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "bRfuwetnjFvNpx2N",
+  "tags": []
+}

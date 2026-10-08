@@ -1,0 +1,195 @@
+{
+  "name": "МеМАС · сохранить ответ",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "save-answer",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c3673ffb-ffe8-41a7-9d3d-b6aec90c41d6",
+      "name": "Webhook",
+      "webhookId": "84a25fe0-95ae-4da6-a050-a42740098174"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".session_answers\n    (session_id, question_id, audio_path, transcript, started_at, finished_at)\nVALUES (\n    {{ $json.body.session_id }},\n    {{ $json.body.question_id }},\n    '{{ $json.body.audio_path }}',\n    NULL,\n    now(),\n    now()\n)\nRETURNING id AS answer_id, session_id, question_id, audio_path;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "ef48bdb6-195c-4e1c-b6c7-dbc568cbbb3d",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8017/stt_path",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "audio_path",
+              "value": "={{ $json.audio_path }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        624,
+        0
+      ],
+      "id": "4899368a-b755-473b-b21e-fac542cf40de",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".session_answers\nSET transcript = '{{ $json.text.replaceAll(\"'\", \"''\") }}'\nWHERE id = {{ $('2. Отметить вопрос заданным').item.json.answer_id }}\nRETURNING id AS answer_id, left(transcript, 80) AS начало, length(transcript) AS длина;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        832,
+        0
+      ],
+      "id": "4ebff331-fc97-4efd-a42b-5609f488a875",
+      "name": "Execute a SQL query2",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".session_questions\nSET asked_at = coalesce(asked_at, now())\nWHERE session_id = {{ $json.session_id }}\n  AND question_id = {{ $json.question_id }}\nRETURNING session_id, question_id,\n          (SELECT audio_path FROM \"ASiruk\".session_answers\n            WHERE id = {{ $json.answer_id }}) AS audio_path,\n          {{ $json.answer_id }} AS answer_id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        0
+      ],
+      "id": "27736f97-c416-4be7-a723-e919bea27630",
+      "name": "2. Отметить вопрос заданным",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "f9225489-73ac-4422-82cf-463221360537",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "2. Отметить вопрос заданным",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Отметить вопрос заданным": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query2": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "79e50544-92f3-4f6d-9804-7bacd58452be",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "3YZHyOcMvNKK7Oic",
+  "tags": []
+}

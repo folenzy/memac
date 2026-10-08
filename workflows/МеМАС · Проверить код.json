@@ -1,0 +1,325 @@
+{
+  "name": "МеМАС · Проверить код",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT ct.id AS task_id, ct.language, ct.statement, ct.expected_result,\n       {{ $json.body.session_id }} AS session_id\nFROM \"ASiruk\".coding_tasks ct\nWHERE ct.id = {{ $json.body.task_id }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "76b25a38-3b8f-4f77-8035-75193c35fdeb",
+      "name": "1. Задача",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "aa31dd56-e31d-4acc-baff-956b84b1a01e",
+              "leftValue": "={{ $json.language }}",
+              "rightValue": "sql",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "61ff8102-f995-4cde-bd76-4fb3a44f940d",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8021/run_sql",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ code: $('Вход: код').first().json.body.code, expected: $json.expected_result }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        784,
+        -272
+      ],
+      "id": "cbdce8af-0f9e-4e28-9d11-404be7926ae6",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Ты ревьюер кода на техническом собеседовании.\n\nЗадача: {{ $json.statement }}\nЯзык: {{ $json.language }}\n\nКод кандидата:\n{{ $('Вход: код').first().json.body.code }}\n\nВерни JSON-объект строго такой формы:\n{\"verdict\": \"passed\", \"review\": \"...\"}\n\nПравила:\n- verdict: \"passed\" если решение верное, иначе \"failed\".\n- review: 2-3 предложения по-русски. Что сделано хорошо, что не так.\n- Оценивай логику и корректность решения, а не оформление кода.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        640,
+        16
+      ],
+      "id": "f240f354-a13b-4ae2-b686-baf6c6478b62",
+      "name": "3. LLM-ревью"
+    },
+    {
+      "parameters": {
+        "model": "llama3.2:3b",
+        "options": {
+          "temperature": 0.2,
+          "numPredict": 1000,
+          "format": "json"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        768,
+        304
+      ],
+      "id": "66b2e6da-887c-4928-83fe-5fc2fc246099",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "jvyHtGYXHyiP9QXE",
+          "name": "Ollama account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\nconst body = $('Вход: код').first().json.body;\n\nlet execStatus = 'not_run';\nlet execOutput = '';\nlet llmReview = '';\n\nif (j.status) {\n  execStatus = j.status;\n  execOutput = String(j.output || '');\n  if (j.rows) execOutput += ' | ' + JSON.stringify(j.rows).slice(0, 500);\n} else {\n  let raw = '';\n  for (const v of Object.values(j)) {\n    if (typeof v === 'string' && v.length > raw.length) raw = v;\n  }\n  const s = raw.indexOf('{');\n  const e = raw.lastIndexOf('}');\n  if (s !== -1 && e > s) {\n    try {\n      const p = JSON.parse(raw.slice(s, e + 1));\n      execStatus = p.verdict === 'passed' ? 'passed' : 'failed';\n      llmReview = String(p.review || '');\n    } catch (err) {\n      execStatus = 'error';\n      llmReview = raw.slice(0, 300);\n    }\n  }\n}\n\nreturn [{ json: {\n  session_id:  Number(body.session_id),\n  task_id:     Number(body.task_id),\n  code:        String(body.code).replace(/'/g, \"''\"),\n  timeline:    JSON.stringify(body.timeline || []).replace(/'/g, \"''\"),\n  exec_status: execStatus,\n  exec_output: execOutput.replace(/'/g, \"''\"),\n  llm_review:  llmReview.replace(/'/g, \"''\")\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        -96
+      ],
+      "id": "b107af83-7cba-4dd2-b7e9-e36817845771",
+      "name": "4. Свести результат"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".coding_submissions\n    (session_id, task_id, code, timeline, exec_status, exec_output, llm_review)\nVALUES (\n  {{ $json.session_id }}, {{ $json.task_id }},\n  '{{ $json.code }}', '{{ $json.timeline }}'::jsonb,\n  '{{ $json.exec_status }}', '{{ $json.exec_output }}', '{{ $json.llm_review }}'\n)\nRETURNING id, exec_status;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1392,
+        -96
+      ],
+      "id": "9f095bea-3222-495c-8b60-d62f3e776f9f",
+      "name": "5. Записать",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".session_answers (session_id, question_id, transcript)\nVALUES (\n  {{ $('4. Свести результат').first().json.session_id }},\n  NULL,\n  '[LIVE-CODING] Задача #{{ $('4. Свести результат').first().json.task_id }}. Результат: {{ $('4. Свести результат').first().json.exec_status }}. Код: {{ $('4. Свести результат').first().json.code }}'\n)\nRETURNING id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1600,
+        -96
+      ],
+      "id": "2dcf8e8d-ae3c-4a5a-93ae-5c7a526c8eeb",
+      "name": "6. В транскрипцию",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1808,
+        -96
+      ],
+      "id": "578989cc-c035-4ac3-9dc1-0fa866732c73",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "check-code",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "dde32156-6700-478d-9380-766cc229765b",
+      "name": "Вход: код",
+      "webhookId": "7c667457-ff5e-445a-bdfe-c1d95022333c"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "1. Задача": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "3. LLM-ревью",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "4. Свести результат",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "3. LLM-ревью",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. LLM-ревью": {
+      "main": [
+        [
+          {
+            "node": "4. Свести результат",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Свести результат": {
+      "main": [
+        [
+          {
+            "node": "5. Записать",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Записать": {
+      "main": [
+        [
+          {
+            "node": "6. В транскрипцию",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. В транскрипцию": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Вход: код": {
+      "main": [
+        [
+          {
+            "node": "1. Задача",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "fbe42845-046a-4553-bd6b-fa5376776428",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "bA9DrfDiOhr9d6Hc",
+  "tags": []
+}

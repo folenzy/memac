@@ -1,0 +1,451 @@
+{
+  "name": "МеМАС ·  создание сессии",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-session",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -112,
+        0
+      ],
+      "id": "c6a9bf34-0805-488e-b737-5654c92ea344",
+      "name": "Webhook",
+      "webhookId": "36aaf08b-feb5-4f2d-89a2-3fa72f1dc1df"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".interview_sessions\n    (employee_id, or_id, duration_min, is_training, status)\nVALUES\n    ({{ $json.employee_id }}, {{ $json.or_id }}, {{ $json.duration_min }},\n     {{ $json.is_training }}, 'planned')\nRETURNING id AS session_id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        -16
+      ],
+      "id": "1b3bda23-6db7-4ffc-bfe4-c39a554c3928",
+      "name": "создать сессию",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT question_id, competency_id, question_text\nFROM (\n  SELECT q.id AS question_id, q.competency_id, q.question_text,\n         row_number() OVER (PARTITION BY q.competency_id ORDER BY random()) AS rn\n  FROM \"ASiruk\".interview_questions q\n  WHERE q.competency_id = ANY(ARRAY[{{ $('Проверка входа').item.json.competency_ids_sql }}]::int[])\n    AND q.status = 'approved'\n) t\nWHERE rn <= {{ $('Проверка входа').item.json.per_competency }}\nORDER BY competency_id, rn;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        784,
+        -16
+      ],
+      "id": "2bbd3307-ba9c-4ca2-9805-8a62a5dba196",
+      "name": "отобрать вопросы",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const byComp = {};\nfor (const it of $input.all()) {\n  const k = it.json.competency_id;\n  if (!byComp[k]) byComp[k] = [];\n  byComp[k].push(it.json);\n}\n\nconst keys = Object.keys(byComp);\nconst ordered = [];\nlet idx = 0;\nlet more = true;\nwhile (more) {\n  more = false;\n  for (const k of keys) {\n    if (byComp[k][idx]) { ordered.push(byComp[k][idx]); more = true; }\n  }\n  idx = idx + 1;\n}\n\nif (ordered.length === 0) throw new Error('Нет одобренных вопросов по выбранным компетенциям');\n\nconst sessionId = $('2. Привязать компетенции').first().json.session_id;\nreturn ordered.map((o, i) => ({ json: {\n  session_id:    sessionId,\n  question_id:   o.question_id,\n  competency_id: o.competency_id,\n  order_no:      i + 1\n}}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        -16
+      ],
+      "id": "fcc8c01f-a1cf-477a-8623-26cc433420d2",
+      "name": "порядок вопросов"
+    },
+    {
+      "parameters": {
+        "jsCode": "let token = '';\nfor (let i = 0; i < 32; i++) token = token + Math.floor(Math.random() * 16).toString(16);\nreturn [{ json: {\n  session_id: $('2. Привязать компетенции').first().json.session_id,\n  token:      token,\n  questions:  $input.all().length\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        -16
+      ],
+      "id": "a80a47f9-56aa-4c38-a98d-44b7ff94428a",
+      "name": "токены комнаты"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".rooms (session_id, token, role, expires_at)\nVALUES ({{ $json.session_id }}, '{{ $json.token }}', 'employee', now() + interval '7 days')\nRETURNING session_id, token;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1472,
+        -16
+      ],
+      "id": "aee7725f-86e9-4ae0-b367-38cf3912012e",
+      "name": "создать комнату",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nlet b = raw.body;\nif (!b) b = raw;\n\nconst ids = [];\nif (Array.isArray(b.competency_ids)) {\n  for (const v of b.competency_ids) ids.push(Number(v));\n}\n\nlet dur = Number(b.duration_min);\nif (!dur) dur = 30;\n\nconst total = Math.max(6, Math.round(dur / 3));\nlet per = Math.ceil(total / Math.max(ids.length, 1));\nif (per < 2) per = 2;\n\nreturn [{ json: {\n  employee_id:        Number(b.employee_id),\n  or_id:              Number(b.or_id),\n  competency_ids:     ids,\n  competency_ids_sql: ids.join(','),\n  duration_min:       dur,\n  is_training:        b.is_training === true,\n  comp_count:         ids.length,\n  per_competency:     per\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        0
+      ],
+      "id": "2c520366-c067-4e26-8857-6ad83d4c3b14",
+      "name": "Проверка входа"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH ins AS (\n  INSERT INTO \"ASiruk\".session_competencies (session_id, competency_id)\n  SELECT {{ $json.session_id }},\n         unnest(ARRAY[{{ $('Проверка входа').item.json.competency_ids_sql }}]::int[])\n  ON CONFLICT DO NOTHING\n  RETURNING 1\n)\nSELECT {{ $json.session_id }} AS session_id, (SELECT count(*) FROM ins) AS linked;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        592,
+        -16
+      ],
+      "id": "99992ccb-46b5-4d5a-84b7-bbc4409fd468",
+      "name": "2. Привязать компетенции",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b7afa4ea-82ff-4083-9a84-6827625b1e52",
+              "leftValue": "={{ $json.comp_count }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "42b6ffa4-d834-4976-b099-7ee9b289393d",
+              "leftValue": "={{ $json.comp_count }}",
+              "rightValue": 5,
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        0
+      ],
+      "id": "999c4697-1716-4043-b511-4195a189b0f7",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"session_id\": {{ $json.session_id }}, \"token\": \"{{ $json.token }}\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1648,
+        -16
+      ],
+      "id": "6fc36bec-5def-4c0a-bb87-360e846ad473",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"Нужно выбрать от 3 до 5 компетенций\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        432,
+        192
+      ],
+      "id": "fbbec5b8-0764-4dd8-bdef-985cef5e30a6",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "ASiruk",
+          "mode": "list",
+          "cachedResultName": "ASiruk"
+        },
+        "table": {
+          "__rl": true,
+          "value": "session_questions",
+          "mode": "list",
+          "cachedResultName": "session_questions"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "session_id",
+              "displayName": "session_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "question_id",
+              "displayName": "question_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "competency_id",
+              "displayName": "competency_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "order_no",
+              "displayName": "order_no",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "asked_at",
+              "displayName": "asked_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1136,
+        -16
+      ],
+      "id": "8f6ac1d1-9d41-4c43-afc0-726422879006",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Проверка входа",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "создать сессию": {
+      "main": [
+        [
+          {
+            "node": "2. Привязать компетенции",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "отобрать вопросы": {
+      "main": [
+        [
+          {
+            "node": "порядок вопросов",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "порядок вопросов": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "токены комнаты": {
+      "main": [
+        [
+          {
+            "node": "создать комнату",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Проверка входа": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Привязать компетенции": {
+      "main": [
+        [
+          {
+            "node": "отобрать вопросы",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "создать сессию",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        []
+      ]
+    },
+    "создать комнату": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in a table": {
+      "main": [
+        [
+          {
+            "node": "токены комнаты",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "804f9b2d-7e83-4fa6-82d8-9c822a402b15",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "Rv4msdJZEUdAQsA3",
+  "tags": []
+}

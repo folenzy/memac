@@ -1,0 +1,203 @@
+{
+  "name": "МеМАС · Проверить вопрос",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "review-question",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "f905fb2f-dfee-44d3-92ad-7bd868f70264",
+      "name": "Вход: проверка",
+      "webhookId": "49356abf-9012-4c1c-9350-8bc6c8727c81"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $input.first().json.body || $input.first().json;\n\nconst qid = Number(b.question_id);\nif (!qid) throw new Error('Не указан question_id');\n\nconst action = String(b.action || '').toLowerCase();\nif (['approve', 'reject', 'edit'].indexOf(action) === -1) {\n  throw new Error('action должен быть approve, reject или edit');\n}\n\nfunction esc(v) {\n  return String(v || '').trim().replace(/'/g, \"''\");\n}\n\nconst qText = esc(b.question_text);\nconst qRef  = esc(b.reference_answer);\n\nif (action === 'edit' && qText.length < 15) {\n  throw new Error('При редактировании нужен текст вопроса не короче 15 символов');\n}\n\nlet status = 'approved';\nif (action === 'reject') status = 'rejected';\n\nreturn [{ json: {\n  question_id:      qid,\n  or_id:            Number(b.or_id) || null,\n  action:           action,\n  status:           status,\n  question_text:    qText,\n  reference_answer: qRef,\n  comment:          esc(b.comment),\n  has_text:         qText.length > 0,\n  has_ref:          qRef.length > 0\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "b2de3871-5cb8-487b-9ca3-64fe3f5ac52c",
+      "name": "1. Разобрать"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".interview_questions\nSET original_text = CASE\n        WHEN original_text IS NULL AND {{ $json.has_text }} THEN question_text\n        ELSE original_text\n    END,\n    question_text = CASE\n        WHEN {{ $json.has_text }} THEN '{{ $json.question_text }}'\n        ELSE question_text\n    END,\n    reference_answer = CASE\n        WHEN {{ $json.has_ref }} THEN '{{ $json.reference_answer }}'\n        ELSE reference_answer\n    END,\n    status           = '{{ $json.status }}',\n    reviewer_comment = NULLIF('{{ $json.comment }}', ''),\n    reviewed_by      = {{ $json.or_id === null ? 'NULL' : $json.or_id }},\n    reviewed_at      = now()\nWHERE id = {{ $json.question_id }}\nRETURNING id AS question_id, status, competency_id,\n          (original_text IS NOT NULL AND original_text <> question_text) AS был_отредактирован;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        0
+      ],
+      "id": "8b875411-f357-4fb9-9eb1-e7e6eb39846d",
+      "name": "2. Записать решение",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "907022e4-3279-4c2d-981c-e3b07843e54c",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "rejected",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        624,
+        0
+      ],
+      "id": "99809f24-a06a-472c-9a4f-3ed3b631dff6",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.id AS competency_id,\n       c.name,\n       count(q.id) FILTER (WHERE q.status = 'approved') AS осталось_одобренных,\n       CASE WHEN count(q.id) FILTER (WHERE q.status = 'approved') = 0\n            THEN 'нет одобренных вопросов' ELSE 'ок' END AS предупреждение\nFROM \"ASiruk\".competencies c\nLEFT JOIN \"ASiruk\".interview_questions q ON q.competency_id = c.id\nWHERE c.id = (SELECT competency_id FROM \"ASiruk\".interview_questions\n              WHERE id = {{ $('1. Разобрать').first().json.question_id }})\nGROUP BY c.id, c.name;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        832,
+        -96
+      ],
+      "id": "97829469-7492-4fa1-87c3-1079df22f688",
+      "name": "3. Проверить покрытие",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1040,
+        -96
+      ],
+      "id": "10ba9071-eae1-413b-bbb3-50fa67b9006e",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Вход: проверка": {
+      "main": [
+        [
+          {
+            "node": "1. Разобрать",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Разобрать": {
+      "main": [
+        [
+          {
+            "node": "2. Записать решение",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Записать решение": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "3. Проверить покрытие",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "3. Проверить покрытие",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Проверить покрытие": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "47457cbf-927a-4b8e-a776-cceddd4b7c6e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "j3n0yzrn8RjLaHRq",
+  "tags": []
+}

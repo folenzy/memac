@@ -1,0 +1,22 @@
+# секреты
+.env
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# данные и артефакты
+media/
+models/
+assets/
+*.wav
+*.mp4
+*.pdf
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

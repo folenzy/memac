@@ -1,0 +1,384 @@
+{
+  "name": "МеМАС · Тренировочная сессия",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "start-training",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -32,
+        16
+      ],
+      "id": "a07c0e83-919b-4438-bdc9-a2c07ca0dca5",
+      "name": "Вход: тренировка",
+      "webhookId": "8a2c7de3-5bf3-41c6-9310-e3247d673d6d"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT coalesce(string_agg(t.id::text, ','), '') AS competency_ids_sql,\n       count(*) AS cnt\nFROM (\n  SELECT c.id\n  FROM \"ASiruk\".employee_competencies ec\n  JOIN \"ASiruk\".competencies c ON c.id = ec.competency_id\n  WHERE ec.employee_id = {{ $json.body.employee_id }}\n    AND ec.status <> 'confirmed'\n    AND EXISTS (SELECT 1 FROM \"ASiruk\".interview_questions q\n                WHERE q.competency_id = c.id AND q.status = 'approved')\n  ORDER BY random()\n  LIMIT 3\n) t;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        112,
+        -176
+      ],
+      "id": "56e9ed9c-aad5-4fe3-8bf5-433713aef492",
+      "name": "1. Подобрать компетенции",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".interview_sessions\n    (employee_id, or_id, duration_min, is_training, status)\nVALUES ({{ $('Вход: тренировка').first().json.body.employee_id }},\n        NULL,\n        {{ $('Вход: тренировка').first().json.body.duration_min || 20 }},\n        true, 'planned')\nRETURNING id AS session_id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        368,
+        -192
+      ],
+      "id": "e5e00068-3454-4dd5-8fdf-1fb53074598a",
+      "name": "2. Создать сессию",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH ins AS (\n  INSERT INTO \"ASiruk\".session_competencies (session_id, competency_id)\n  SELECT {{ $json.session_id }},\n         unnest(ARRAY[{{ $('1. Подобрать компетенции').first().json.competency_ids_sql }}]::int[])\n  ON CONFLICT DO NOTHING\n  RETURNING 1\n)\nSELECT {{ $json.session_id }} AS session_id, (SELECT count(*) FROM ins) AS linked;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        512,
+        16
+      ],
+      "id": "c99c8f50-0973-4854-be20-7f54682f31eb",
+      "name": "3. Привязать компетенции",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT question_id, competency_id\nFROM (\n  SELECT q.id AS question_id, q.competency_id,\n         row_number() OVER (PARTITION BY q.competency_id ORDER BY random()) AS rn\n  FROM \"ASiruk\".interview_questions q\n  WHERE q.competency_id = ANY(ARRAY[{{ $('1. Подобрать компетенции').first().json.competency_ids_sql }}]::int[])\n    AND q.status = 'approved'\n) t\nWHERE rn <= 2\nORDER BY competency_id, rn;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        672,
+        -192
+      ],
+      "id": "58a7e5fc-a36a-403f-8bd0-d5a21e6bfb14",
+      "name": "4. Отобрать вопросы",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const byComp = {};\nfor (const it of $input.all()) {\n  const k = it.json.competency_id;\n  if (!byComp[k]) byComp[k] = [];\n  byComp[k].push(it.json);\n}\nconst keys = Object.keys(byComp);\nconst ordered = [];\nlet idx = 0, more = true;\nwhile (more) {\n  more = false;\n  for (const k of keys) {\n    if (byComp[k][idx]) { ordered.push(byComp[k][idx]); more = true; }\n  }\n  idx++;\n}\nif (ordered.length === 0) throw new Error('Нет вопросов');\n\nconst sessionId = $('3. Привязать компетенции').first().json.session_id;\nreturn ordered.map((o, i) => ({ json: {\n  session_id: sessionId, question_id: o.question_id,\n  competency_id: o.competency_id, order_no: i + 1\n}}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        32
+      ],
+      "id": "94c0da85-78bf-489d-8a16-b6631b994999",
+      "name": "5. Порядок"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "ASiruk",
+          "mode": "list",
+          "cachedResultName": "ASiruk"
+        },
+        "table": {
+          "__rl": true,
+          "value": "session_questions",
+          "mode": "list",
+          "cachedResultName": "session_questions"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {
+            "id": 0,
+            "session_id": 0,
+            "question_id": 0,
+            "competency_id": 0,
+            "order_no": 0
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "session_id",
+              "displayName": "session_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "question_id",
+              "displayName": "question_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "competency_id",
+              "displayName": "competency_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "order_no",
+              "displayName": "order_no",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "asked_at",
+              "displayName": "asked_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        944,
+        -208
+      ],
+      "id": "e4610b34-d714-466c-a01a-f8134f82380c",
+      "name": "6. Записать план",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let token = '';\nfor (let i = 0; i < 32; i++) token += Math.floor(Math.random() * 16).toString(16);\nreturn [{ json: {\n  session_id: $('3. Привязать компетенции').first().json.session_id,\n  token: token,\n  questions: $input.all().length\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        32
+      ],
+      "id": "2f8f3724-ac67-4ec2-81e1-2491bcc33b55",
+      "name": "7. Токен"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO \"ASiruk\".rooms (session_id, token, role, expires_at)\nVALUES ({{ $json.session_id }}, '{{ $json.token }}', 'employee', now() + interval '2 days')\nRETURNING session_id, token;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1200,
+        -208
+      ],
+      "id": "8efdb03d-7f01-44d3-95cc-648173299452",
+      "name": "8. Комната",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1360,
+        32
+      ],
+      "id": "f182877f-f4c8-4e38-85f0-e528cbb1c55e",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Вход: тренировка": {
+      "main": [
+        [
+          {
+            "node": "1. Подобрать компетенции",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Подобрать компетенции": {
+      "main": [
+        [
+          {
+            "node": "2. Создать сессию",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Создать сессию": {
+      "main": [
+        [
+          {
+            "node": "3. Привязать компетенции",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Привязать компетенции": {
+      "main": [
+        [
+          {
+            "node": "4. Отобрать вопросы",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Отобрать вопросы": {
+      "main": [
+        [
+          {
+            "node": "5. Порядок",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Порядок": {
+      "main": [
+        [
+          {
+            "node": "6. Записать план",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Записать план": {
+      "main": [
+        [
+          {
+            "node": "7. Токен",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. Токен": {
+      "main": [
+        [
+          {
+            "node": "8. Комната",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8. Комната": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e87dffcf-ab6d-470a-967a-bcb9119cf052",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "DlH5Rer1qgBnQ1eW",
+  "tags": []
+}

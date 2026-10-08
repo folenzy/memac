@@ -1,0 +1,182 @@
+{
+  "name": "МеМАС · Напоминания",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "f5de485a-d320-4805-ae97-1c501be7a6c0",
+      "name": "R0. Расписание"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        672,
+        208
+      ],
+      "id": "337b71b7-4a7e-4f6c-8923-1a68c8a16bb7",
+      "name": "R0. Вручную"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH ins AS (\n  INSERT INTO \"ASiruk\".reminders (session_id, or_id, due_at)\n  SELECT s.id, s.or_id,\n         (SELECT max(d) FROM (\n            SELECT d FROM generate_series(\n                     s.finished_at + interval '1 day',\n                     s.finished_at + interval '30 days',\n                     interval '1 day') AS d\n            WHERE extract(isodow FROM d) < 6\n            LIMIT 10\n          ) x)\n  FROM \"ASiruk\".interview_sessions s\n  WHERE s.status IN ('completed', 'evaluated')\n    AND s.is_training = false\n    AND s.finished_at IS NOT NULL\n    AND s.or_id IS NOT NULL\n  ON CONFLICT (session_id) DO NOTHING\n  RETURNING 1\n)\nSELECT (SELECT count(*) FROM ins) AS создано;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "7de13789-4f99-4c37-996f-a64d477e1db4",
+      "name": "R1. Завести напоминания",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.id AS reminder_id,\n       r.session_id,\n       r.due_at,\n       u_or.full_name  AS or_name,\n       u_or.email      AS or_email,\n       u_emp.full_name AS employee_name,\n       s.finished_at,\n       (SELECT count(*) FROM \"ASiruk\".interview_sessions s2\n         WHERE s2.employee_id = s.employee_id\n           AND s2.created_at > s.finished_at\n           AND s2.is_training = false) AS новых_сессий\nFROM \"ASiruk\".reminders r\nJOIN \"ASiruk\".interview_sessions s ON s.id = r.session_id\nLEFT JOIN \"ASiruk\".users u_or  ON u_or.id  = r.or_id\nLEFT JOIN \"ASiruk\".users u_emp ON u_emp.id = s.employee_id\nWHERE r.sent_at IS NULL\n  AND r.due_at <= now()\nORDER BY r.due_at;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        0
+      ],
+      "id": "6dfb4aec-6869-4ba5-9cd6-a5c4206839be",
+      "name": "R2. Что просрочено",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\n\nconst actual = [];\nconst skipped = [];\n\nfor (const r of rows) {\n  if (!r.reminder_id) continue;\n  if (Number(r.новых_сессий) > 0) { skipped.push(r); continue; }\n  actual.push(r);\n}\n\nconst ids = [];\nfor (const r of actual) ids.push(r.reminder_id);\nfor (const r of skipped) ids.push(r.reminder_id);\n\nlet text = '';\nfor (const r of actual) {\n  text += 'ОР: ' + r.or_name + ' — сотрудник ' + r.employee_name +\n          ' (сессия #' + r.session_id + '). Пора назначить следующую встречу.\\n';\n}\n\nreturn [{ json: {\n  to_send:     actual.length,\n  skipped:     skipped.length,\n  ids_sql:     ids.length ? ids.join(',') : '0',\n  items:       actual,\n  digest:      text\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "9441f418-ceb5-4263-b403-0938a891c083",
+      "name": "R3. Отфильтровать"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH upd AS (\n  UPDATE \"ASiruk\".reminders\n  SET sent_at = now()\n  WHERE id IN ({{ $json.ids_sql }})\n  RETURNING id\n)\nSELECT (SELECT count(*) FROM upd) AS отмечено,\n       {{ $json.to_send }} AS к_отправке,\n       {{ $json.skipped }} AS пропущено;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        832,
+        0
+      ],
+      "id": "9ab4e8d0-3b9e-4c37-890e-42c4dc526975",
+      "name": "R4. Отметить отправленными",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "R0. Расписание": {
+      "main": [
+        [
+          {
+            "node": "R1. Завести напоминания",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "R0. Вручную": {
+      "main": [
+        [
+          {
+            "node": "R4. Отметить отправленными",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "R1. Завести напоминания": {
+      "main": [
+        [
+          {
+            "node": "R2. Что просрочено",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "R2. Что просрочено": {
+      "main": [
+        [
+          {
+            "node": "R3. Отфильтровать",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "R3. Отфильтровать": {
+      "main": [
+        [
+          {
+            "node": "R4. Отметить отправленными",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "77e06f3c-6970-488b-9e2f-56726f59eca7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "Ykfv2zKtQpuXk8ly",
+  "tags": []
+}

@@ -1,0 +1,259 @@
+{
+  "name": "МеМАС · Забронировать слот",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "book-slot",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "520a2820-62a8-4996-a267-b7ba67decc6f",
+      "name": "Вход: бронь",
+      "webhookId": "287f9ed5-3936-45fe-843b-65830dc67cce"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT t.slot_id, t.session_id,\n       s.status      AS slot_status,\n       s.starts_at,\n       s.or_id       AS slot_or_id,\n       ses.or_id     AS session_or_id,\n       ses.status    AS session_status,\n       ses.employee_id,\n       CASE\n         WHEN s.id IS NULL                          THEN 'slot_not_found'\n         WHEN ses.id IS NULL                        THEN 'session_not_found'\n         WHEN s.status <> 'free'                    THEN 'slot_busy'\n         WHEN s.starts_at <= now()                  THEN 'slot_in_past'\n         WHEN ses.status <> 'planned'               THEN 'session_not_planned'\n         WHEN s.or_id IS DISTINCT FROM ses.or_id    THEN 'or_mismatch'\n         ELSE 'ok'\n       END AS check_result\nFROM (SELECT {{ $json.body.slot_id }}::int AS slot_id,\n             {{ $json.body.session_id }}::int AS session_id) t\nLEFT JOIN \"ASiruk\".slots s                ON s.id = t.slot_id\nLEFT JOIN \"ASiruk\".interview_sessions ses ON ses.id = t.session_id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "4f6733f7-9920-49ce-8035-ebe5e5383d0e",
+      "name": "1. Проверить слот",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "76953bbd-d381-48b5-8699-28dc0674cd98",
+              "leftValue": "={{ $json.check_result }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "edf7d0cb-c038-4c1a-8a30-863f083ddab2",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".slots\nSET status      = 'booked',\n    employee_id = {{ $json.employee_id }},\n    session_id  = {{ $json.session_id }}\nWHERE id = {{ $json.slot_id }} AND status = 'free'\nRETURNING id AS slot_id, session_id, starts_at, ends_at;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        624,
+        -96
+      ],
+      "id": "6605ea55-d736-472b-8fd6-978da26f3e31",
+      "name": "2. Забронировать",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".interview_sessions\nSET slot_id = {{ $json.slot_id }}\nWHERE id = {{ $json.session_id }}\nRETURNING id AS session_id, slot_id, employee_id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        832,
+        -96
+      ],
+      "id": "f3199257-d07d-4ffe-a6eb-1d3b6b46a266",
+      "name": "3. Привязать к сессии",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"ASiruk\".rooms r\nSET expires_at = s.ends_at + interval '2 hours'\nFROM \"ASiruk\".slots s\nWHERE r.session_id = {{ $json.session_id }}\n  AND s.id = {{ $('2. Забронировать').first().json.slot_id }}\nRETURNING r.token, r.expires_at, r.session_id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1040,
+        -96
+      ],
+      "id": "1c4ec797-24c8-4502-a00b-ab80b7186c6a",
+      "name": "4. Ссылка на комнату",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"session_id\": {{ $json.session_id }}, \"token\": \"{{ $json.token }}\", \"expires_at\": \"{{ $json.expires_at }}\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1248,
+        -96
+      ],
+      "id": "064da3f1-9f15-4a8b-9c56-1b156e902441",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"{{ $json.check_result }}\" }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        624,
+        96
+      ],
+      "id": "2aacc9eb-3bdf-46ec-9cb1-986dd6eacee2",
+      "name": "Respond to Webhook1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Вход: бронь": {
+      "main": [
+        [
+          {
+            "node": "1. Проверить слот",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Проверить слот": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "2. Забронировать",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Забронировать": {
+      "main": [
+        [
+          {
+            "node": "3. Привязать к сессии",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Привязать к сессии": {
+      "main": [
+        [
+          {
+            "node": "4. Ссылка на комнату",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Ссылка на комнату": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "41881f37-1135-42e1-98a0-b2840faf3e55",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "Sq2f0UQdLxjgKsbe",
+  "tags": []
+}

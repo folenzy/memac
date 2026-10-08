@@ -1,0 +1,1265 @@
+{
+  "name": "АРХИВ · Парсер гайдбука (старый)",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -944,
+        0
+      ],
+      "id": "dbd7ec30-f6ca-43ca-8318-7b6815eab121",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.batchList }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=КРИТИЧЕСКИ ВАЖНО: ответ должен начинаться сразу с символа { и заканчиваться символом }. Никаких markdown-разметок (```), никакого текста до или после JSON-объекта.\n\nНиже список из {{ $json.count }} записей о навыках:\n\nДля КАЖДОЙ записи извлеки структуру и верни результат СТРОГО в формате JSON.\n\nФормат ответа — объект с полем \"items\", где items — массив из {{ $json.count }} объектов, каждый со следующими полями:\n- specialty (string)\n- knowledge_area (string)\n- competency (string)\n- skill_name (string)\n- skill_type (string, одно из: \"hard_skills\" или \"soft_skills\")\n- skill_description (string)\n\nКоличество объектов в items ДОЛЖНО точно равняться {{ $json.count }}. Не пропускай записи, не объединяй их."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        368,
+        0
+      ],
+      "id": "736d3119-a1ab-4143-8682-f728d82c0725",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": "llama3:8b",
+        "options": {
+          "numCtx": 8192,
+          "numPredict": 10000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        368,
+        176
+      ],
+      "id": "fa82fede-af02-4d98-962f-d34372fa1fe5",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "jvyHtGYXHyiP9QXE",
+          "name": "Ollama account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.batchList }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=КРИТИЧЕСКИ ВАЖНО: ответ должен начинаться сразу с символа { и заканчиваться символом }. Никаких markdown-разметок (```), никакого текста до или после JSON-объекта.\nНиже список из {{ $json.count }} принципов с готовыми сценариями (разделены \"---\"):\n{{ $json.batchList }}\n\nДля КАЖДОЙ записи структурируй существующий сценарий в кейс для оценки soft skills. Не придумывай новый сценарий — используй и адаптируй под формат вопроса тот, что дан в исходном тексте.\n\nВерни результат СТРОГО в формате JSON без markdown, без пояснений, без текста до/после JSON.\n\nФормат ответа — объект с полем \"items\", где items — массив из {{ $json.count }} объектов, каждый со следующими полями:\n- principle_name (string)\n- case_question (string) — сформулированный как вопрос кандидату кейс на основе сценария\n- reference_answer (string) — краткий эталонный ответ/на что обращать внимание при оценке\n- soft_skill_area (string) — какую soft skill проверяет (например: коммуникация, работа в команде, стрессоустойчивость)\n\nКоличество объектов в items ДОЛЖНО точно равняться {{ $json.count }}."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        256,
+        -320
+      ],
+      "id": "e3b70c22-a34a-4429-aa92-7d605c598f01",
+      "name": "Basic LLM Chain1"
+    },
+    {
+      "parameters": {
+        "model": "llama3.2:3b",
+        "options": {
+          "numCtx": 8192,
+          "numPredict": 4096
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        256,
+        -160
+      ],
+      "id": "f56808ee-fff1-466a-af0f-1fe313c6480d",
+      "name": "Ollama Chat Model1",
+      "credentials": {
+        "ollamaApi": {
+          "id": "jvyHtGYXHyiP9QXE",
+          "name": "Ollama account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.batchList }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=КРИТИЧЕСКИ ВАЖНО: ответ должен начинаться сразу с символа { и заканчиваться символом }. Никаких markdown-разметок (```), никакого текста до или после JSON-объекта.Ниже список из {{ $json.count }} практических задач:\n{{ $json.batchList }}\n\nДля КАЖДОЙ записи извлеки структуру и верни результат СТРОГО в формате JSON без markdown, без пояснений, без текста до/после JSON.\n\nФормат ответа — объект с полем \"items\", где items — массив из {{ $json.count }} объектов, каждый со следующими полями:\n- task_name (string)\n- related_competency (string) — к какой компетенции/навыку относится задача\n- task_type (string, одно из: \"код\", \"архитектура\", \"дебаг\", \"кейс\")\n- task_description (string) — полное описание задачи\n- difficulty_level (string, одно из: \"junior\", \"middle\", \"senior\")\n\nКоличество объектов в items ДОЛЖНО точно равняться {{ $json.count }}. Не пропускай записи, не объединяй их."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        368,
+        304
+      ],
+      "id": "691fc659-359c-4849-ac8b-dc4c9d5c6a17",
+      "name": "Basic LLM Chain2"
+    },
+    {
+      "parameters": {
+        "model": "llama3:8b",
+        "options": {
+          "numCtx": 8192,
+          "numPredict": 4096
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        384,
+        464
+      ],
+      "id": "5191b493-f7f2-409a-9696-4165997e8e50",
+      "name": "Ollama Chat Model2",
+      "credentials": {
+        "ollamaApi": {
+          "id": "jvyHtGYXHyiP9QXE",
+          "name": "Ollama account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "daacb341-3e17-4c49-8210-ee140114f9e7",
+              "name": "source_sheet",
+              "value": "навыки",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        592,
+        -144
+      ],
+      "id": "caed80bd-fea5-492c-ad03-c42aa84dde7e",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "items",
+        "include": "allOtherFields",
+        "options": {
+          "destinationFieldName": ""
+        }
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        0
+      ],
+      "id": "884a346b-d8c7-46cd-a7bf-a61db6741bad",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cf489ddb-1990-48ca-9eab-61f2995c7a0e",
+              "name": "source_sheet",
+              "value": "принципы",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        832,
+        -336
+      ],
+      "id": "48015135-30c1-49d6-85f8-f21264891a4f",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "items",
+        "include": "allOtherFields",
+        "options": {
+          "destinationFieldName": ""
+        }
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        -336
+      ],
+      "id": "28fe5bbd-6c90-42fd-87eb-8efc5a27317a",
+      "name": "Split Out1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4dc03028-9bc4-44f1-9277-e5649623b22e",
+              "name": "source_sheet",
+              "value": "задачи",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        896,
+        304
+      ],
+      "id": "0ce10ee7-f599-43c2-a571-412c7ee13ee9",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "items",
+        "include": "allOtherFields",
+        "options": {
+          "destinationFieldName": ""
+        }
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        304
+      ],
+      "id": "689743c6-a596-46f9-9ccd-9bfb76c1fe3e",
+      "name": "Split Out2"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1248,
+        -16
+      ],
+      "id": "72836791-3b9d-4889-bc35-72f7126f0c13",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.source_sheet }}",
+                    "rightValue": "навыки",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "5237a060-c1c1-4177-9fc8-0c5f218f1ab1"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "de1f95e0-f511-46c0-9d8c-ab4c3eac303f",
+                    "leftValue": "={{ $json.source_sheet }}",
+                    "rightValue": "задачи",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0eb52852-3244-495d-b299-8166ff9bda2f",
+                    "leftValue": "={{ $json.source_sheet }}",
+                    "rightValue": "принципы",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1520,
+        -16
+      ],
+      "id": "9454080d-2407-4fdf-8286-2deed601fec4",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "ASiruk",
+          "mode": "list",
+          "cachedResultName": "ASiruk"
+        },
+        "table": {
+          "__rl": true,
+          "value": "guidebook_skills",
+          "mode": "list",
+          "cachedResultName": "guidebook_skills"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "specialty": "={{ $json.items.specialty }}",
+            "knowledge_area": "={{ $json.items.knowledge_area }}",
+            "competency": "={{ $json.items.competency }}",
+            "skill_name": "={{ $json.items.skill_name }}",
+            "skill_type": "={{ $json.items.skill_name }}",
+            "skill_description": "={{ $json.items.skill_description }}",
+            "source_sheet": "={{ $json.source_sheet }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "specialty",
+              "displayName": "specialty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "knowledge_area",
+              "displayName": "knowledge_area",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "competency",
+              "displayName": "competency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "skill_name",
+              "displayName": "skill_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "skill_type",
+              "displayName": "skill_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "skill_description",
+              "displayName": "skill_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "development_indicators",
+              "displayName": "development_indicators",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "success_criteria",
+              "displayName": "success_criteria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "source_sheet",
+              "displayName": "source_sheet",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1792,
+        -144
+      ],
+      "id": "6b9c20a9-7245-4844-bf4c-eef6a6d3fc10",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "ASiruk",
+          "mode": "list",
+          "cachedResultName": "ASiruk"
+        },
+        "table": {
+          "__rl": true,
+          "value": "guidebook_tasks",
+          "mode": "list",
+          "cachedResultName": "guidebook_tasks"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "responsibility_area": "={{ $json.items.related_competency }}",
+            "task": "={{ $json.items.task_type }}",
+            "aspect_description": "={{ $json.items.task_description }}",
+            "source_sheet": "={{ $json.source_sheet }}",
+            "career_level": "={{ $json.items.difficulty_level }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "specialty",
+              "displayName": "specialty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "responsibility_area",
+              "displayName": "responsibility_area",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "task",
+              "displayName": "task",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "career_level",
+              "displayName": "career_level",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "aspect_description",
+              "displayName": "aspect_description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_sheet",
+              "displayName": "source_sheet",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1792,
+        0
+      ],
+      "id": "c0a5d425-651f-430e-b49e-0abe1588dfd9",
+      "name": "Insert rows in a table1",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "ASiruk",
+          "mode": "list",
+          "cachedResultName": "ASiruk"
+        },
+        "table": {
+          "__rl": true,
+          "value": "guidebook_principles",
+          "mode": "list",
+          "cachedResultName": "guidebook_principles"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "specialty": "={{ $json.items.principle_name }}",
+            "behavior_options": "={{ $json.items.reference_answer }}",
+            "source_sheet": "={{ $json.source_sheet }}",
+            "principle": "={{ $json.items.case_question }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "specialty",
+              "displayName": "specialty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "principle",
+              "displayName": "principle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "behavior_options",
+              "displayName": "behavior_options",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_sheet",
+              "displayName": "source_sheet",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1792,
+        160
+      ],
+      "id": "563cc7c4-4ce9-43f1-8bc5-1f04fb74e808",
+      "name": "Insert rows in a table2",
+      "credentials": {
+        "postgres": {
+          "id": "KSlL0XgJe9oa85ah",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "sheetName": "Навыки"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -592,
+        0
+      ],
+      "id": "bcda27b8-beca-4367-9778-98cb9fa48e05",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "sheetName": "Задачи"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -432,
+        304
+      ],
+      "id": "fbedecd8-b4f2-44c0-b56f-06e5f5b8db2c",
+      "name": "Extract from File1"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "sheetName": "Принципы"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -416,
+        -208
+      ],
+      "id": "62fece7a-7bd8-416d-b2e3-de28e732c3ad",
+      "name": "Extract from File2"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "items",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -192,
+        304
+      ],
+      "id": "e9ea6ff7-b7ea-40e6-8922-48ea71a2c775",
+      "name": "Aggregate_tasks"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "items",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -192,
+        -208
+      ],
+      "id": "71d71ead-7894-4896-a38f-1664f4b6217a",
+      "name": "Aggregate_principles"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(item => item.json);\n\nconst listText = rows.map((r, i) => {\n  return `${i + 1}. специальность=\"${r['Специальность'] ?? ''}\", область_знаний=\"${r['Область знаний'] ?? ''}\", компетенция=\"${r['Компетенция'] ?? ''}\", навык=\"${r['Навык'] ?? ''}\", тип_навыка=\"${r['Тип навыка'] ?? ''}\", описание_навыка=\"${r['Описание навыка'] ?? ''}\"`;\n}).join('\\n');\n\nreturn [{ json: { batchList: listText, count: rows.length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        0
+      ],
+      "id": "6bdc5c42-a8dc-4c2c-b84d-a4b360f055fc",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.first().json.items;\n\nconst listText = rows.map((r, i) => {\n  return `${i + 1}. специальность=\"${r['Специальность'] ?? ''}\", зона_ответственности=\"${r['Зона ответственности'] ?? ''}\", решаемая_задача=\"${r['Решаемая задача'] ?? ''}\", карьерный_уровень=\"${r['Карьерный уровень'] ?? ''}\", описание_ку_задачи=\"${r['Описание КУ задачи'] ?? ''}\", аспект=\"${r['Аспект'] ?? ''}\", описание_аспекта=\"${r['Описание аспекта'] ?? ''}\"`;\n}).join('\\n');\n\nreturn [{ json: { batchList: listText, count: rows.length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        304
+      ],
+      "id": "557d8d39-48f6-4559-9c0d-eb5b00f3e5e3",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.first().json.items;\n\nconst listText = rows.map((r, i) => {\n  return `${i + 1}. специальность=\"${r['Специальность'] ?? ''}\", проявление=\"${r['Проявление'] ?? ''}\", принцип=\"${r['Принцип'] ?? ''}\", маркеры_поведения=\"${r['Маркеры желаемого поведения'] ?? ''}\"`;\n}).join('\\n---\\n');\n\nreturn [{ json: { batchList: listText, count: rows.length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -208
+      ],
+      "id": "037847ba-133e-418a-85bf-6ba3ce008fc6",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.text ?? $input.first().json.output ?? $input.first().json.response;\n\nlet cleaned = raw.trim();\ncleaned = cleaned.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/```\\s*$/i, '');\n\ncleaned = cleaned.replace(/\"([^\"\\\\]|\\\\.)*\"/g, (match) => {\n  return match.replace(/\\n/g, '\\\\n').replace(/\\r/g, '\\\\r').replace(/\\t/g, '\\\\t');\n});\n\nfunction normalizeItems(parsed) {\n  let items = parsed.items ?? (Array.isArray(parsed) ? parsed : [parsed]);\n  if (typeof items === 'string') {\n    try {\n      items = JSON.parse(items);\n    } catch (e) {\n      // не смогли распарсить строку как JSON\n    }\n  }\n  return Array.isArray(items) ? items : [];\n}\n\nlet allItems = [];\n\ntry {\n  const parsed = JSON.parse(cleaned);\n  allItems = normalizeItems(parsed);\n} catch (e) {\n  const objectMatches = cleaned.match(/\\{[\\s\\S]*?\\}/g);\n\n  if (!objectMatches) {\n    throw new Error(`Не удалось найти JSON-объекты в ответе.\\n\\nRaw text (first 2000 chars):\\n${cleaned.slice(0, 2000)}`);\n  }\n\n  for (const objStr of objectMatches) {\n    try {\n      const obj = JSON.parse(objStr);\n      const objItems = normalizeItems(obj);\n      if (objItems.length) allItems.push(...objItems);\n    } catch (innerError) {\n      console.log('Skipped malformed object:', objStr.slice(0, 300), 'Error:', innerError.message);\n    }\n  }\n}\n\nif (allItems.length === 0) {\n  throw new Error(`Не удалось распарсить ни одного объекта.\\n\\nRaw text (first 3000 chars):\\n${cleaned.slice(0, 3000)}`);\n}\n\nreturn [{ json: { items: allItems } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        -320
+      ],
+      "id": "d2558ce5-e480-415d-9b1a-66fa372a4028",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.text ?? $input.first().json.output ?? $input.first().json.response;\n\nlet cleaned = raw.trim();\ncleaned = cleaned.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/```\\s*$/i, '');\n\ncleaned = cleaned.replace(/\"([^\"\\\\]|\\\\.)*\"/g, (match) => {\n  return match.replace(/\\n/g, '\\\\n').replace(/\\r/g, '\\\\r').replace(/\\t/g, '\\\\t');\n});\n\nfunction normalizeItems(parsed) {\n  let items = parsed.items ?? (Array.isArray(parsed) ? parsed : [parsed]);\n  if (typeof items === 'string') {\n    try {\n      items = JSON.parse(items);\n    } catch (e) {\n      // не смогли распарсить строку как JSON\n    }\n  }\n  return Array.isArray(items) ? items : [];\n}\n\nlet allItems = [];\n\ntry {\n  const parsed = JSON.parse(cleaned);\n  allItems = normalizeItems(parsed);\n} catch (e) {\n  const objectMatches = cleaned.match(/\\{[\\s\\S]*?\\}/g);\n\n  if (!objectMatches) {\n    throw new Error(`Не удалось найти JSON-объекты в ответе.\\n\\nRaw text (first 2000 chars):\\n${cleaned.slice(0, 2000)}`);\n  }\n\n  for (const objStr of objectMatches) {\n    try {\n      const obj = JSON.parse(objStr);\n      const objItems = normalizeItems(obj);\n      if (objItems.length) allItems.push(...objItems);\n    } catch (innerError) {\n      console.log('Skipped malformed object:', objStr.slice(0, 300), 'Error:', innerError.message);\n    }\n  }\n}\n\nif (allItems.length === 0) {\n  throw new Error(`Не удалось распарсить ни одного объекта.\\n\\nRaw text (first 3000 chars):\\n${cleaned.slice(0, 3000)}`);\n}\n\nreturn [{ json: { items: allItems } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        0
+      ],
+      "id": "59219f34-831a-4701-b4e5-bd851527f2f4",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.text ?? $input.first().json.output ?? $input.first().json.response;\n\nlet cleaned = raw.trim();\ncleaned = cleaned.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/```\\s*$/i, '');\n\ncleaned = cleaned.replace(/\"([^\"\\\\]|\\\\.)*\"/g, (match) => {\n  return match.replace(/\\n/g, '\\\\n').replace(/\\r/g, '\\\\r').replace(/\\t/g, '\\\\t');\n});\n\nfunction normalizeItems(parsed) {\n  let items = parsed.items ?? (Array.isArray(parsed) ? parsed : [parsed]);\n  if (typeof items === 'string') {\n    try {\n      items = JSON.parse(items);\n    } catch (e) {\n      // не смогли распарсить строку как JSON\n    }\n  }\n  return Array.isArray(items) ? items : [];\n}\n\nlet allItems = [];\n\ntry {\n  const parsed = JSON.parse(cleaned);\n  allItems = normalizeItems(parsed);\n} catch (e) {\n  const objectMatches = cleaned.match(/\\{[\\s\\S]*?\\}/g);\n\n  if (!objectMatches) {\n    throw new Error(`Не удалось найти JSON-объекты в ответе.\\n\\nRaw text (first 2000 chars):\\n${cleaned.slice(0, 2000)}`);\n  }\n\n  for (const objStr of objectMatches) {\n    try {\n      const obj = JSON.parse(objStr);\n      const objItems = normalizeItems(obj);\n      if (objItems.length) allItems.push(...objItems);\n    } catch (innerError) {\n      console.log('Skipped malformed object:', objStr.slice(0, 300), 'Error:', innerError.message);\n    }\n  }\n}\n\nif (allItems.length === 0) {\n  throw new Error(`Не удалось распарсить ни одного объекта.\\n\\nRaw text (first 3000 chars):\\n${cleaned.slice(0, 3000)}`);\n}\n\nreturn [{ json: { items: allItems } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        304
+      ],
+      "id": "cecdbbf4-2a73-4f1a-8c56-4c7ad8ebc41f",
+      "name": "Code in JavaScript5"
+    },
+    {
+      "parameters": {
+        "batchSize": 20,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -272,
+        0
+      ],
+      "id": "57d1e738-3f95-4760-8d42-0668bc9f4b71",
+      "name": "Loop Over Items"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract from File1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract from File2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Split Out1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "Split Out2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Split Out1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert rows in a table1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert rows in a table2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File1": {
+      "main": [
+        [
+          {
+            "node": "Aggregate_tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File2": {
+      "main": [
+        [
+          {
+            "node": "Aggregate_principles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate_tasks": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate_principles": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "5b440c82-6d75-493e-9308-2d1db302fc5f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0be6d0c7fbcc29571279009079182292062211f60195cea35ae1847f1d78cb5c"
+  },
+  "id": "mH93nG13YWKe7MC4",
+  "tags": []
+}

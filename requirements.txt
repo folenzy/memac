@@ -1,0 +1,19 @@
+# веб-интерфейс
+streamlit
+psycopg2-binary
+pandas
+plotly
+requests
+python-dotenv
+
+# медиасервисы
+fastapi
+uvicorn
+pydantic
+numpy
+librosa
+faster-whisper
+pyttsx3
+pillow
+moviepy<2.0
+reportlab
